@@ -1,0 +1,81 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Calculation Cache Schema",
+  "description": "Schema for caching drug normalization and NDC data",
+  "type": "object",
+  "properties": {
+    "cacheKey": {
+      "type": "string",
+      "description": "Unique cache key (hash of drug name or RxCUI)"
+    },
+    "cacheType": {
+      "type": "string",
+      "enum": ["drug_normalization", "ndc_data", "calculation_result"],
+      "description": "Type of cached data"
+    },
+    "drugName": {
+      "type": "string",
+      "description": "Original drug name (if applicable)"
+    },
+    "rxcui": {
+      "type": "string",
+      "description": "RxNorm Concept Unique Identifier"
+    },
+    "ndcs": {
+      "type": "array",
+      "description": "Array of NDC data",
+      "items": {
+        "type": "object",
+        "properties": {
+          "ndc": {
+            "type": "string"
+          },
+          "packageSize": {
+            "type": "number"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "dosageForm": {
+            "type": "string"
+          },
+          "marketingStatus": {
+            "type": "string"
+          },
+          "isActive": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "data": {
+      "type": "object",
+      "description": "Cached data payload"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Cache creation timestamp"
+    },
+    "lastUpdated": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last update timestamp"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Cache expiration timestamp"
+    },
+    "ttl": {
+      "type": "number",
+      "description": "Time to live in milliseconds"
+    },
+    "hitCount": {
+      "type": "number",
+      "description": "Number of times this cache entry was accessed"
+    }
+  },
+  "required": ["cacheKey", "cacheType", "data", "createdAt", "lastUpdated", "expiresAt", "ttl"]
+}
+

@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    "baseUrl": ".",
+    "target": "ES2021",
+    "module": "commonjs",
+    "lib": ["ES2021"],
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "strictFunctionTypes": true,
+    "strictBindCallApply": true,
+    "strictPropertyInitialization": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "paths": {
+      "@api-contracts/*": ["packages/api-contracts/src/*"],
+      "@api-contracts": ["packages/api-contracts/src/index.ts"],
+      "@domain-ndc/*": ["packages/domain-ndc/src/*"],
+      "@domain-ndc": ["packages/domain-ndc/src/index.ts"],
+      "@clients-rxnorm/*": ["packages/clients-rxnorm/src/*"],
+      "@clients-rxnorm": ["packages/clients-rxnorm/src/index.ts"],
+      "@clients-openfda/*": ["packages/clients-openfda/src/*"],
+      "@clients-openfda": ["packages/clients-openfda/src/index.ts"],
+      "@data-cache/*": ["packages/data-cache/src/*"],
+      "@data-cache": ["packages/data-cache/src/index.ts"],
+      "@core-config/*": ["packages/core-config/src/*"],
+      "@core-config": ["packages/core-config/src/index.ts"],
+      "@core-guardrails/*": ["packages/core-guardrails/src/*"],
+      "@core-guardrails": ["packages/core-guardrails/src/index.ts"],
+      "@utils/*": ["packages/utils/src/*"],
+      "@utils": ["packages/utils/src/index.ts"]
+    }
+  }
+}
+

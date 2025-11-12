@@ -1,0 +1,196 @@
+openapi: 3.0.3
+info:
+  title: NDC Packaging & Quantity Calculator API
+  version: 1.0.0
+  description: AI-accelerated tool for accurate prescription fulfillment
+  contact:
+    name: Foundation Health
+    
+servers:
+  - url: https://us-central1-ndc-calculator-prod.cloudfunctions.net/api
+    description: Production
+  - url: https://us-central1-ndc-calculator-staging.cloudfunctions.net/api
+    description: Staging
+  - url: http://localhost:5001/ndc-calculator-dev/us-central1/api
+    description: Local development
+
+paths:
+  /v1/health:
+    get:
+      summary: Health check
+      operationId: health
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy, degraded, unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    
+  /v1/calculate:
+    post:
+      summary: Calculate NDC packages for prescription
+      operationId: calculate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculateRequest'
+      responses:
+        '200':
+          description: Successful calculation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculateResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+                
+components:
+  schemas:
+    CalculateRequest:
+      type: object
+      required:
+        - drug
+        - sig
+        - daysSupply
+      properties:
+        drug:
+          type: object
+          properties:
+            name:
+              type: string
+              minLength: 2
+              maxLength: 200
+              example: "Lisinopril"
+            rxcui:
+              type: string
+              example: "104377"
+        sig:
+          type: object
+          required:
+            - dose
+            - frequency
+            - unit
+          properties:
+            dose:
+              type: number
+              minimum: 0
+              example: 1
+            frequency:
+              type: number
+              minimum: 0
+              example: 2
+            unit:
+              type: string
+              example: "tablet"
+        daysSupply:
+          type: integer
+          minimum: 1
+          maximum: 365
+          example: 30
+          
+    CalculateResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            drug:
+              type: object
+              properties:
+                rxcui:
+                  type: string
+                name:
+                  type: string
+                dosageForm:
+                  type: string
+                strength:
+                  type: string
+            totalQuantity:
+              type: number
+            recommendedPackages:
+              type: array
+              items:
+                $ref: '#/components/schemas/Package'
+            overfillPercentage:
+              type: number
+            underfillPercentage:
+              type: number
+            warnings:
+              type: array
+              items:
+                type: string
+            explanations:
+              type: array
+              items:
+                $ref: '#/components/schemas/Explanation'
+        error:
+          $ref: '#/components/schemas/Error'
+          
+    Package:
+      type: object
+      properties:
+        ndc:
+          type: string
+        packageSize:
+          type: number
+        unit:
+          type: string
+        dosageForm:
+          type: string
+        isActive:
+          type: boolean
+          
+    Explanation:
+      type: object
+      properties:
+        step:
+          type: string
+        description:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+          
+    Error:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        details:
+          type: object
+          
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          $ref: '#/components/schemas/Error'
+

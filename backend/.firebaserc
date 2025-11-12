@@ -1,0 +1,11 @@
+{
+  "projects": {
+    "default": "ndc-calculator-dev",
+    "dev": "ndc-calculator-dev",
+    "staging": "ndc-calculator-staging",
+    "prod": "ndc-calculator-prod"
+  },
+  "targets": {},
+  "etags": {}
+}
+

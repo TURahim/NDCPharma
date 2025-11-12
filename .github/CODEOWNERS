@@ -1,0 +1,31 @@
+# Code Owners for NDC Calculator
+# These owners will be automatically requested for review when PRs modify their areas
+
+# Default owners for everything in the repo
+* @foundation-health/ndc-team
+
+# Package ownership
+packages/clients-rxnorm/ @foundation-health/team-integrations
+packages/clients-openfda/ @foundation-health/team-integrations
+packages/domain-ndc/ @foundation-health/team-business-logic
+packages/core-guardrails/ @foundation-health/team-platform
+packages/core-config/ @foundation-health/team-platform
+packages/data-cache/ @foundation-health/team-platform
+packages/api-contracts/ @foundation-health/team-api
+packages/utils/ @foundation-health/team-platform
+
+# Apps ownership
+apps/functions/ @foundation-health/team-api
+frontend/ @foundation-health/team-frontend
+
+# Infrastructure and CI/CD
+.github/ @foundation-health/team-platform
+**/firebase.json @foundation-health/team-platform
+**/firestore/ @foundation-health/team-platform
+pnpm-workspace.yaml @foundation-health/team-platform
+tsconfig.base.json @foundation-health/team-platform
+
+# Documentation
+*.md @foundation-health/ndc-team
+docs/ @foundation-health/ndc-team
+
