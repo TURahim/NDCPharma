@@ -209,3 +209,30 @@ export const CalculateResponseSchema = z.object({
 
 export type CalculateResponse = z.infer<typeof CalculateResponseSchema>;
 
+/**
+ * AI Enhancement Info Schema (optional)
+ */
+export const AIEnhancementSchema = z.object({
+  /**
+   * Whether AI was used
+   */
+  used: z.boolean(),
+  
+  /**
+   * AI confidence score
+   */
+  confidence: z.number().min(0).max(1).optional(),
+  
+  /**
+   * AI reasoning
+   */
+  reasoning: z.string().optional(),
+  
+  /**
+   * Estimated API cost
+   */
+  cost: z.number().optional(),
+});
+
+export type AIEnhancement = z.infer<typeof AIEnhancementSchema>;
+

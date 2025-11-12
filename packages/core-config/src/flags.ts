@@ -31,3 +31,14 @@ export const ENABLE_ADVANCED_CACHING =
 export const ENABLE_ANALYTICS =
   process.env.ENABLE_ANALYTICS !== 'false';
 
+/**
+ * Feature Flags Object
+ * Consolidated feature flags for easy access
+ */
+export const FEATURE_FLAGS = {
+  USE_ENHANCED_NORMALIZATION,
+  ENABLE_OPENAI: ENABLE_OPENAI_ENHANCER,
+  ENABLE_ADVANCED_CACHING,
+  ENABLE_ANALYTICS,
+} as const;
+

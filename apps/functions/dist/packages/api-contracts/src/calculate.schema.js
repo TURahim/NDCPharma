@@ -4,7 +4,7 @@
  * Zod schemas for request/response validation
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.CalculateResponseSchema = exports.ExcludedNDCSchema = exports.ExplanationSchema = exports.PackageRecommendationSchema = exports.CalculateRequestSchema = void 0;
+exports.AIEnhancementSchema = exports.CalculateResponseSchema = exports.ExcludedNDCSchema = exports.ExplanationSchema = exports.PackageRecommendationSchema = exports.CalculateRequestSchema = void 0;
 const zod_1 = require("zod");
 /**
  * Calculate Request Schema
@@ -168,5 +168,26 @@ exports.CalculateResponseSchema = zod_1.z.object({
         message: zod_1.z.string(),
         details: zod_1.z.unknown().optional(),
     }).optional(),
+});
+/**
+ * AI Enhancement Info Schema (optional)
+ */
+exports.AIEnhancementSchema = zod_1.z.object({
+    /**
+     * Whether AI was used
+     */
+    used: zod_1.z.boolean(),
+    /**
+     * AI confidence score
+     */
+    confidence: zod_1.z.number().min(0).max(1).optional(),
+    /**
+     * AI reasoning
+     */
+    reasoning: zod_1.z.string().optional(),
+    /**
+     * Estimated API cost
+     */
+    cost: zod_1.z.number().optional(),
 });
 //# sourceMappingURL=calculate.schema.js.map

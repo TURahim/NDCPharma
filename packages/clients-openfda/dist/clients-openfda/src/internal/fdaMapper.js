@@ -31,7 +31,7 @@ function mapFDAResultToNDCPackage(fdaResult) {
         try {
             const ndcPackage = {
                 ndc: normalizeNDC(packaging.package_ndc),
-                productNdc: normalizeNDC(fdaResult.product_ndc),
+                productNdc: fdaResult.product_ndc,
                 genericName: fdaResult.generic_name,
                 brandName: fdaResult.brand_name || fdaResult.brand_name_base,
                 dosageForm: normalizeDosageForm(fdaResult.dosage_form),
@@ -73,7 +73,7 @@ function mapFDAResultToNDCDetails(fdaResult) {
         const allPackages = (fdaResult.packaging || []).map((pkg) => parsePackageSize(pkg.description));
         const details = {
             ndc: normalizeNDC(primaryPackaging.package_ndc),
-            productNdc: normalizeNDC(fdaResult.product_ndc),
+            productNdc: fdaResult.product_ndc,
             genericName: fdaResult.generic_name,
             brandName: fdaResult.brand_name || fdaResult.brand_name_base,
             dosageForm: normalizeDosageForm(fdaResult.dosage_form),

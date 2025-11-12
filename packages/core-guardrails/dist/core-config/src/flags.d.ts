@@ -22,3 +22,13 @@ export declare const ENABLE_ADVANCED_CACHING: boolean;
  * Default: true
  */
 export declare const ENABLE_ANALYTICS: boolean;
+/**
+ * Feature Flags Object
+ * Consolidated feature flags for easy access
+ */
+export declare const FEATURE_FLAGS: {
+    readonly USE_ENHANCED_NORMALIZATION: boolean;
+    readonly ENABLE_OPENAI: boolean;
+    readonly ENABLE_ADVANCED_CACHING: boolean;
+    readonly ENABLE_ANALYTICS: boolean;
+};

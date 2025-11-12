@@ -38,7 +38,7 @@ function validateNDCFormat(ndc) {
     const errors = [];
     const warnings = [];
     // Basic checks
-    if (!ndc || typeof ndc !== 'string') {
+    if (typeof ndc !== 'string') {
         errors.push('NDC code is required and must be a string');
         return {
             isValid: false,

@@ -474,3 +474,35 @@ export declare const CalculateResponseSchema: z.ZodObject<{
     } | undefined;
 }>;
 export type CalculateResponse = z.infer<typeof CalculateResponseSchema>;
+/**
+ * AI Enhancement Info Schema (optional)
+ */
+export declare const AIEnhancementSchema: z.ZodObject<{
+    /**
+     * Whether AI was used
+     */
+    used: z.ZodBoolean;
+    /**
+     * AI confidence score
+     */
+    confidence: z.ZodOptional<z.ZodNumber>;
+    /**
+     * AI reasoning
+     */
+    reasoning: z.ZodOptional<z.ZodString>;
+    /**
+     * Estimated API cost
+     */
+    cost: z.ZodOptional<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    used: boolean;
+    confidence?: number | undefined;
+    reasoning?: string | undefined;
+    cost?: number | undefined;
+}, {
+    used: boolean;
+    confidence?: number | undefined;
+    reasoning?: string | undefined;
+    cost?: number | undefined;
+}>;
+export type AIEnhancement = z.infer<typeof AIEnhancementSchema>;

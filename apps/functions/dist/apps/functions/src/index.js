@@ -63,8 +63,8 @@ app.use((0, cors_1.default)({ origin: (0, _core_config_1.getCorsOrigins)() }));
 app.use(express_1.default.json());
 app.use(redact_1.redactionMiddleware);
 // Routes
-app.get('/v1/health', health_1.healthCheck);
-app.post('/v1/calculate', rateLimit_1.rateLimitMiddleware, (0, validate_1.validateBody)(_api_contracts_1.CalculateRequestSchema), calculate_1.calculateHandler);
+app.get('/v1/health', (0, error_1.asyncHandler)(health_1.healthCheck));
+app.post('/v1/calculate', rateLimit_1.rateLimitMiddleware, (0, validate_1.validateRequest)(_api_contracts_1.CalculateRequestSchema), (0, error_1.asyncHandler)(calculate_1.calculateHandler));
 // Error handling
 app.use(error_1.errorHandler);
 // Export Cloud Function

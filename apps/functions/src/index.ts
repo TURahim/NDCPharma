@@ -11,8 +11,8 @@ import helmet from 'helmet';
 import { CalculateRequestSchema } from '@api-contracts';
 import { healthCheck } from './api/v1/health';
 import { calculateHandler } from './api/v1/calculate';
-import { validateBody } from './api/v1/middlewares/validate';
-import { errorHandler } from './api/v1/middlewares/error';
+import { validateRequest } from './api/v1/middlewares/validate';
+import { errorHandler, asyncHandler } from './api/v1/middlewares/error';
 import { rateLimitMiddleware } from './api/v1/middlewares/rateLimit';
 import { redactionMiddleware } from './api/v1/middlewares/redact';
 import { getCorsOrigins } from '@core-config';
@@ -30,13 +30,13 @@ app.use(express.json());
 app.use(redactionMiddleware);
 
 // Routes
-app.get('/v1/health', healthCheck);
+app.get('/v1/health', asyncHandler(healthCheck));
 
 app.post(
   '/v1/calculate',
   rateLimitMiddleware,
-  validateBody(CalculateRequestSchema),
-  calculateHandler
+  validateRequest(CalculateRequestSchema),
+  asyncHandler(calculateHandler)
 );
 
 // Error handling
