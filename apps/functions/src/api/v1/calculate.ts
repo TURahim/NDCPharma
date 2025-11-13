@@ -10,10 +10,14 @@ import {
   PackageRecommendation,
   Explanation,
   ExcludedNDC,
+  AIInsights,
+  Metadata,
 } from '@api-contracts';
 import { nameToRxCui } from '@clients-rxnorm';
 import { fdaClient, type NDCPackage } from '@clients-openfda';
+import { ndcRecommender, type NDCRecommendationRequest } from '@clients-openai';
 import { createLogger } from '@core-guardrails';
+import { ENABLE_OPENAI_ENHANCER } from '@core-config';
 
 const logger = createLogger({ service: 'CalculateEndpoint' });
 
@@ -292,12 +296,123 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
       dosageForm: pkg.dosageForm,
       marketingStatus: String(pkg.marketingStatus),
       isActive: pkg.marketingStatus === 'ACTIVE' as any,
+      quantityNeeded: pkg.packageSize.quantity,
+      fillPrecision: (overfillPercentage === 0 && underfillPercentage === 0) ? 'exact' as const :
+                     overfillPercentage > 0 ? 'overfill' as const : 'underfill' as const,
     }));
 
     // ==========================================
-    // STEP 5: Format and return response
+    // STEP 5: AI Enhancement (Optional)
+    // ==========================================
+    let aiInsights: AIInsights | undefined;
+    let metadata: Metadata = {
+      usedAI: false,
+      executionTime: 0, // Will be set at the end
+    };
+
+    if (ENABLE_OPENAI_ENHANCER) {
+      logger.info('AI enhancement enabled, calling OpenAI recommender', { rxcui });
+      
+      try {
+        const aiStartTime = Date.now();
+        
+        // Prepare AI request
+        const aiRequest: NDCRecommendationRequest = {
+          drug: {
+            genericName: drugName || 'Unknown',
+            rxcui,
+            dosageForm,
+            strength,
+          },
+          prescription: {
+            sig: `${request.sig.dose} ${request.sig.unit} ${request.sig.frequency} times daily`,
+            daysSupply: request.daysSupply,
+            quantityNeeded: totalQuantity,
+          },
+          availablePackages: activePackages.map((pkg: NDCPackage) => ({
+            ndc: pkg.ndc,
+            packageSize: pkg.packageSize.quantity,
+            unit: pkg.packageSize.unit,
+            labeler: pkg.labelerName || 'Unknown',
+            isActive: pkg.marketingStatus === 'ACTIVE' as any,
+          })),
+        };
+
+        // Get AI recommendation
+        const aiResult = await ndcRecommender.getEnhancedRecommendation(aiRequest);
+        const aiExecutionTime = Date.now() - aiStartTime;
+
+        logger.info('AI recommendation received', {
+          usedAI: aiResult.metadata.usedAI,
+          algorithmicFallback: aiResult.metadata.algorithmicFallback,
+          executionTime: aiExecutionTime,
+        });
+
+        // Extract AI insights
+        if (aiResult.aiInsights) {
+          aiInsights = {
+            factors: aiResult.aiInsights.factors,
+            considerations: aiResult.aiInsights.considerations,
+            rationale: aiResult.aiInsights.rationale,
+            costEfficiency: aiResult.aiInsights.costEfficiency,
+          };
+        }
+
+        // Update metadata
+        metadata = {
+          usedAI: aiResult.metadata.usedAI,
+          algorithmicFallback: aiResult.metadata.algorithmicFallback,
+          executionTime: 0, // Will be set at the end
+          aiCost: aiResult.metadata.aiCost,
+        };
+
+        // Update recommendations with AI insights
+        if (aiResult.primary) {
+          const primaryNdc = aiResult.primary.ndc;
+          const primaryIdx = recommendedPackages.findIndex(pkg => pkg.ndc === primaryNdc);
+          
+          if (primaryIdx !== -1) {
+            recommendedPackages[primaryIdx] = {
+              ...recommendedPackages[primaryIdx],
+              reasoning: aiResult.primary.reasoning,
+              confidenceScore: aiResult.primary.confidenceScore,
+              source: aiResult.primary.source,
+            };
+          }
+        }
+
+        explanations.push({
+          step: 'ai_enhancement',
+          description: aiResult.metadata.usedAI
+            ? 'AI-enhanced recommendation with reasoning'
+            : 'Algorithm-based recommendation (AI unavailable)',
+          details: {
+            usedAI: aiResult.metadata.usedAI,
+            executionTime: aiExecutionTime,
+          },
+        });
+      } catch (aiError) {
+        logger.warn('AI enhancement failed, using algorithmic results', {
+          error: aiError as Error,
+        });
+        
+        metadata = {
+          usedAI: false,
+          algorithmicFallback: true,
+          executionTime: 0, // Will be set at the end
+        };
+        
+        warnings.push(
+          'AI enhancement unavailable. Recommendations are algorithm-based only.'
+        );
+      }
+    }
+
+    // ==========================================
+    // STEP 6: Format and return response
     // ==========================================
     const executionTime = Date.now() - startTime;
+    metadata.executionTime = executionTime;
     
     logger.info('Calculation completed successfully', {
       rxcui,
@@ -322,6 +437,8 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
         warnings,
         excluded: excluded.length > 0 ? excluded : undefined,
         explanations,
+        aiInsights,
+        metadata,
       },
     };
 

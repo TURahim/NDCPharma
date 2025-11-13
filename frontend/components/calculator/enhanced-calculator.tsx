@@ -12,7 +12,7 @@ import { CalculateResponse } from '@/types/api';
 import { DrugAutocomplete } from '@/components/ui/drug-autocomplete';
 import { Button } from '@/components/ui/button';
 import { StatusIndicators } from '@/components/dashboard/status-indicators';
-import { AIInsights } from '@/components/dashboard/ai-insights';
+import { AIInsightsPanel } from '@/components/calculator/ai-insights-panel';
 import { MultiPackHelper } from '@/components/dashboard/multipack-helper';
 import { HelpPopover } from '@/components/ui/help-popover';
 import { GuidedMode } from '@/components/calculator/guided-mode';
@@ -305,8 +305,13 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
             {/* Status Indicators */}
             <StatusIndicators result={result} />
 
-            {/* AI Insights */}
-            <AIInsights result={result} daysSupply={parseInt(daysSupply)} />
+            {/* AI Insights - Only show if AI data is available */}
+            {result.data.aiInsights && result.data.metadata && (
+              <AIInsightsPanel
+                insights={result.data.aiInsights}
+                metadata={result.data.metadata}
+              />
+            )}
           </div>
         )}
       </div>

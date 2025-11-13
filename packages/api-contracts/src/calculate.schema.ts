@@ -90,6 +90,31 @@ export const PackageRecommendationSchema = z.object({
    * Whether this NDC is active
    */
   isActive: z.boolean(),
+  
+  /**
+   * Quantity needed from this package
+   */
+  quantityNeeded: z.number().optional(),
+  
+  /**
+   * Fill precision (exact, overfill, underfill)
+   */
+  fillPrecision: z.enum(['exact', 'overfill', 'underfill']).optional(),
+  
+  /**
+   * AI reasoning for this recommendation (if AI was used)
+   */
+  reasoning: z.string().optional(),
+  
+  /**
+   * Confidence score (if AI was used)
+   */
+  confidenceScore: z.number().min(0).max(1).optional(),
+  
+  /**
+   * Source of recommendation (ai or algorithm)
+   */
+  source: z.enum(['ai', 'algorithm']).optional(),
 });
 
 export type PackageRecommendation = z.infer<typeof PackageRecommendationSchema>;
@@ -137,6 +162,64 @@ export const ExcludedNDCSchema = z.object({
 });
 
 export type ExcludedNDC = z.infer<typeof ExcludedNDCSchema>;
+
+/**
+ * AI Insights Schema (optional)
+ * Provides AI-generated recommendations and reasoning
+ */
+export const AIInsightsSchema = z.object({
+  /**
+   * Key factors considered
+   */
+  factors: z.array(z.string()),
+  
+  /**
+   * Important considerations
+   */
+  considerations: z.array(z.string()),
+  
+  /**
+   * Overall rationale
+   */
+  rationale: z.string(),
+  
+  /**
+   * Cost efficiency analysis
+   */
+  costEfficiency: z.object({
+    estimatedWaste: z.number(),
+    rating: z.enum(['low', 'medium', 'high']),
+  }).optional(),
+});
+
+export type AIInsights = z.infer<typeof AIInsightsSchema>;
+
+/**
+ * Metadata Schema
+ */
+export const MetadataSchema = z.object({
+  /**
+   * Whether AI was used for recommendations
+   */
+  usedAI: z.boolean(),
+  
+  /**
+   * Whether algorithm was used as fallback
+   */
+  algorithmicFallback: z.boolean().optional(),
+  
+  /**
+   * Execution time in milliseconds
+   */
+  executionTime: z.number(),
+  
+  /**
+   * Estimated AI cost (if AI was used)
+   */
+  aiCost: z.number().optional(),
+});
+
+export type Metadata = z.infer<typeof MetadataSchema>;
 
 /**
  * Calculate Response Schema
@@ -195,6 +278,16 @@ export const CalculateResponseSchema = z.object({
      * Step-by-step explanations
      */
     explanations: z.array(ExplanationSchema),
+    
+    /**
+     * AI insights (if AI enhancement was used)
+     */
+    aiInsights: AIInsightsSchema.optional(),
+    
+    /**
+     * Metadata about the calculation
+     */
+    metadata: MetadataSchema.optional(),
   }).optional(),
   
   /**
@@ -208,31 +301,4 @@ export const CalculateResponseSchema = z.object({
 });
 
 export type CalculateResponse = z.infer<typeof CalculateResponseSchema>;
-
-/**
- * AI Enhancement Info Schema (optional)
- */
-export const AIEnhancementSchema = z.object({
-  /**
-   * Whether AI was used
-   */
-  used: z.boolean(),
-  
-  /**
-   * AI confidence score
-   */
-  confidence: z.number().min(0).max(1).optional(),
-  
-  /**
-   * AI reasoning
-   */
-  reasoning: z.string().optional(),
-  
-  /**
-   * Estimated API cost
-   */
-  cost: z.number().optional(),
-});
-
-export type AIEnhancement = z.infer<typeof AIEnhancementSchema>;
 

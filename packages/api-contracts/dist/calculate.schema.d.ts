@@ -115,6 +115,26 @@ export declare const PackageRecommendationSchema: z.ZodObject<{
      * Whether this NDC is active
      */
     isActive: z.ZodBoolean;
+    /**
+     * Quantity needed from this package
+     */
+    quantityNeeded: z.ZodOptional<z.ZodNumber>;
+    /**
+     * Fill precision (exact, overfill, underfill)
+     */
+    fillPrecision: z.ZodOptional<z.ZodEnum<["exact", "overfill", "underfill"]>>;
+    /**
+     * AI reasoning for this recommendation (if AI was used)
+     */
+    reasoning: z.ZodOptional<z.ZodString>;
+    /**
+     * Confidence score (if AI was used)
+     */
+    confidenceScore: z.ZodOptional<z.ZodNumber>;
+    /**
+     * Source of recommendation (ai or algorithm)
+     */
+    source: z.ZodOptional<z.ZodEnum<["ai", "algorithm"]>>;
 }, "strip", z.ZodTypeAny, {
     unit: string;
     ndc: string;
@@ -122,6 +142,11 @@ export declare const PackageRecommendationSchema: z.ZodObject<{
     dosageForm: string;
     isActive: boolean;
     marketingStatus?: string | undefined;
+    quantityNeeded?: number | undefined;
+    fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+    reasoning?: string | undefined;
+    confidenceScore?: number | undefined;
+    source?: "ai" | "algorithm" | undefined;
 }, {
     unit: string;
     ndc: string;
@@ -129,6 +154,11 @@ export declare const PackageRecommendationSchema: z.ZodObject<{
     dosageForm: string;
     isActive: boolean;
     marketingStatus?: string | undefined;
+    quantityNeeded?: number | undefined;
+    fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+    reasoning?: string | undefined;
+    confidenceScore?: number | undefined;
+    source?: "ai" | "algorithm" | undefined;
 }>;
 export type PackageRecommendation = z.infer<typeof PackageRecommendationSchema>;
 /**
@@ -183,6 +213,86 @@ export declare const ExcludedNDCSchema: z.ZodObject<{
     marketingStatus?: string | undefined;
 }>;
 export type ExcludedNDC = z.infer<typeof ExcludedNDCSchema>;
+/**
+ * AI Insights Schema (optional)
+ * Provides AI-generated recommendations and reasoning
+ */
+export declare const AIInsightsSchema: z.ZodObject<{
+    /**
+     * Key factors considered
+     */
+    factors: z.ZodArray<z.ZodString, "many">;
+    /**
+     * Important considerations
+     */
+    considerations: z.ZodArray<z.ZodString, "many">;
+    /**
+     * Overall rationale
+     */
+    rationale: z.ZodString;
+    /**
+     * Cost efficiency analysis
+     */
+    costEfficiency: z.ZodOptional<z.ZodObject<{
+        estimatedWaste: z.ZodNumber;
+        rating: z.ZodEnum<["low", "medium", "high"]>;
+    }, "strip", z.ZodTypeAny, {
+        estimatedWaste: number;
+        rating: "low" | "medium" | "high";
+    }, {
+        estimatedWaste: number;
+        rating: "low" | "medium" | "high";
+    }>>;
+}, "strip", z.ZodTypeAny, {
+    factors: string[];
+    considerations: string[];
+    rationale: string;
+    costEfficiency?: {
+        estimatedWaste: number;
+        rating: "low" | "medium" | "high";
+    } | undefined;
+}, {
+    factors: string[];
+    considerations: string[];
+    rationale: string;
+    costEfficiency?: {
+        estimatedWaste: number;
+        rating: "low" | "medium" | "high";
+    } | undefined;
+}>;
+export type AIInsights = z.infer<typeof AIInsightsSchema>;
+/**
+ * Metadata Schema
+ */
+export declare const MetadataSchema: z.ZodObject<{
+    /**
+     * Whether AI was used for recommendations
+     */
+    usedAI: z.ZodBoolean;
+    /**
+     * Whether algorithm was used as fallback
+     */
+    algorithmicFallback: z.ZodOptional<z.ZodBoolean>;
+    /**
+     * Execution time in milliseconds
+     */
+    executionTime: z.ZodNumber;
+    /**
+     * Estimated AI cost (if AI was used)
+     */
+    aiCost: z.ZodOptional<z.ZodNumber>;
+}, "strip", z.ZodTypeAny, {
+    usedAI: boolean;
+    executionTime: number;
+    algorithmicFallback?: boolean | undefined;
+    aiCost?: number | undefined;
+}, {
+    usedAI: boolean;
+    executionTime: number;
+    algorithmicFallback?: boolean | undefined;
+    aiCost?: number | undefined;
+}>;
+export type Metadata = z.infer<typeof MetadataSchema>;
 /**
  * Calculate Response Schema
  */
@@ -246,6 +356,26 @@ export declare const CalculateResponseSchema: z.ZodObject<{
              * Whether this NDC is active
              */
             isActive: z.ZodBoolean;
+            /**
+             * Quantity needed from this package
+             */
+            quantityNeeded: z.ZodOptional<z.ZodNumber>;
+            /**
+             * Fill precision (exact, overfill, underfill)
+             */
+            fillPrecision: z.ZodOptional<z.ZodEnum<["exact", "overfill", "underfill"]>>;
+            /**
+             * AI reasoning for this recommendation (if AI was used)
+             */
+            reasoning: z.ZodOptional<z.ZodString>;
+            /**
+             * Confidence score (if AI was used)
+             */
+            confidenceScore: z.ZodOptional<z.ZodNumber>;
+            /**
+             * Source of recommendation (ai or algorithm)
+             */
+            source: z.ZodOptional<z.ZodEnum<["ai", "algorithm"]>>;
         }, "strip", z.ZodTypeAny, {
             unit: string;
             ndc: string;
@@ -253,6 +383,11 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             dosageForm: string;
             isActive: boolean;
             marketingStatus?: string | undefined;
+            quantityNeeded?: number | undefined;
+            fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+            reasoning?: string | undefined;
+            confidenceScore?: number | undefined;
+            source?: "ai" | "algorithm" | undefined;
         }, {
             unit: string;
             ndc: string;
@@ -260,6 +395,11 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             dosageForm: string;
             isActive: boolean;
             marketingStatus?: string | undefined;
+            quantityNeeded?: number | undefined;
+            fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+            reasoning?: string | undefined;
+            confidenceScore?: number | undefined;
+            source?: "ai" | "algorithm" | undefined;
         }>, "many">;
         /**
          * Overfill percentage
@@ -323,6 +463,83 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             description: string;
             details?: Record<string, unknown> | undefined;
         }>, "many">;
+        /**
+         * AI insights (if AI enhancement was used)
+         */
+        aiInsights: z.ZodOptional<z.ZodObject<{
+            /**
+             * Key factors considered
+             */
+            factors: z.ZodArray<z.ZodString, "many">;
+            /**
+             * Important considerations
+             */
+            considerations: z.ZodArray<z.ZodString, "many">;
+            /**
+             * Overall rationale
+             */
+            rationale: z.ZodString;
+            /**
+             * Cost efficiency analysis
+             */
+            costEfficiency: z.ZodOptional<z.ZodObject<{
+                estimatedWaste: z.ZodNumber;
+                rating: z.ZodEnum<["low", "medium", "high"]>;
+            }, "strip", z.ZodTypeAny, {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            }, {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            }>>;
+        }, "strip", z.ZodTypeAny, {
+            factors: string[];
+            considerations: string[];
+            rationale: string;
+            costEfficiency?: {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            } | undefined;
+        }, {
+            factors: string[];
+            considerations: string[];
+            rationale: string;
+            costEfficiency?: {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            } | undefined;
+        }>>;
+        /**
+         * Metadata about the calculation
+         */
+        metadata: z.ZodOptional<z.ZodObject<{
+            /**
+             * Whether AI was used for recommendations
+             */
+            usedAI: z.ZodBoolean;
+            /**
+             * Whether algorithm was used as fallback
+             */
+            algorithmicFallback: z.ZodOptional<z.ZodBoolean>;
+            /**
+             * Execution time in milliseconds
+             */
+            executionTime: z.ZodNumber;
+            /**
+             * Estimated AI cost (if AI was used)
+             */
+            aiCost: z.ZodOptional<z.ZodNumber>;
+        }, "strip", z.ZodTypeAny, {
+            usedAI: boolean;
+            executionTime: number;
+            algorithmicFallback?: boolean | undefined;
+            aiCost?: number | undefined;
+        }, {
+            usedAI: boolean;
+            executionTime: number;
+            algorithmicFallback?: boolean | undefined;
+            aiCost?: number | undefined;
+        }>>;
     }, "strip", z.ZodTypeAny, {
         drug: {
             name: string;
@@ -338,6 +555,11 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             dosageForm: string;
             isActive: boolean;
             marketingStatus?: string | undefined;
+            quantityNeeded?: number | undefined;
+            fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+            reasoning?: string | undefined;
+            confidenceScore?: number | undefined;
+            source?: "ai" | "algorithm" | undefined;
         }[];
         overfillPercentage: number;
         underfillPercentage: number;
@@ -352,6 +574,21 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             reason: string;
             marketingStatus?: string | undefined;
         }[] | undefined;
+        aiInsights?: {
+            factors: string[];
+            considerations: string[];
+            rationale: string;
+            costEfficiency?: {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            } | undefined;
+        } | undefined;
+        metadata?: {
+            usedAI: boolean;
+            executionTime: number;
+            algorithmicFallback?: boolean | undefined;
+            aiCost?: number | undefined;
+        } | undefined;
     }, {
         drug: {
             name: string;
@@ -367,6 +604,11 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             dosageForm: string;
             isActive: boolean;
             marketingStatus?: string | undefined;
+            quantityNeeded?: number | undefined;
+            fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+            reasoning?: string | undefined;
+            confidenceScore?: number | undefined;
+            source?: "ai" | "algorithm" | undefined;
         }[];
         overfillPercentage: number;
         underfillPercentage: number;
@@ -381,6 +623,21 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             reason: string;
             marketingStatus?: string | undefined;
         }[] | undefined;
+        aiInsights?: {
+            factors: string[];
+            considerations: string[];
+            rationale: string;
+            costEfficiency?: {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            } | undefined;
+        } | undefined;
+        metadata?: {
+            usedAI: boolean;
+            executionTime: number;
+            algorithmicFallback?: boolean | undefined;
+            aiCost?: number | undefined;
+        } | undefined;
     }>>;
     /**
      * Error information (if failed)
@@ -415,6 +672,11 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             dosageForm: string;
             isActive: boolean;
             marketingStatus?: string | undefined;
+            quantityNeeded?: number | undefined;
+            fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+            reasoning?: string | undefined;
+            confidenceScore?: number | undefined;
+            source?: "ai" | "algorithm" | undefined;
         }[];
         overfillPercentage: number;
         underfillPercentage: number;
@@ -429,6 +691,21 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             reason: string;
             marketingStatus?: string | undefined;
         }[] | undefined;
+        aiInsights?: {
+            factors: string[];
+            considerations: string[];
+            rationale: string;
+            costEfficiency?: {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            } | undefined;
+        } | undefined;
+        metadata?: {
+            usedAI: boolean;
+            executionTime: number;
+            algorithmicFallback?: boolean | undefined;
+            aiCost?: number | undefined;
+        } | undefined;
     } | undefined;
     error?: {
         code: string;
@@ -452,6 +729,11 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             dosageForm: string;
             isActive: boolean;
             marketingStatus?: string | undefined;
+            quantityNeeded?: number | undefined;
+            fillPrecision?: "exact" | "overfill" | "underfill" | undefined;
+            reasoning?: string | undefined;
+            confidenceScore?: number | undefined;
+            source?: "ai" | "algorithm" | undefined;
         }[];
         overfillPercentage: number;
         underfillPercentage: number;
@@ -466,6 +748,21 @@ export declare const CalculateResponseSchema: z.ZodObject<{
             reason: string;
             marketingStatus?: string | undefined;
         }[] | undefined;
+        aiInsights?: {
+            factors: string[];
+            considerations: string[];
+            rationale: string;
+            costEfficiency?: {
+                estimatedWaste: number;
+                rating: "low" | "medium" | "high";
+            } | undefined;
+        } | undefined;
+        metadata?: {
+            usedAI: boolean;
+            executionTime: number;
+            algorithmicFallback?: boolean | undefined;
+            aiCost?: number | undefined;
+        } | undefined;
     } | undefined;
     error?: {
         code: string;
@@ -474,35 +771,3 @@ export declare const CalculateResponseSchema: z.ZodObject<{
     } | undefined;
 }>;
 export type CalculateResponse = z.infer<typeof CalculateResponseSchema>;
-/**
- * AI Enhancement Info Schema (optional)
- */
-export declare const AIEnhancementSchema: z.ZodObject<{
-    /**
-     * Whether AI was used
-     */
-    used: z.ZodBoolean;
-    /**
-     * AI confidence score
-     */
-    confidence: z.ZodOptional<z.ZodNumber>;
-    /**
-     * AI reasoning
-     */
-    reasoning: z.ZodOptional<z.ZodString>;
-    /**
-     * Estimated API cost
-     */
-    cost: z.ZodOptional<z.ZodNumber>;
-}, "strip", z.ZodTypeAny, {
-    used: boolean;
-    confidence?: number | undefined;
-    reasoning?: string | undefined;
-    cost?: number | undefined;
-}, {
-    used: boolean;
-    confidence?: number | undefined;
-    reasoning?: string | undefined;
-    cost?: number | undefined;
-}>;
-export type AIEnhancement = z.infer<typeof AIEnhancementSchema>;

@@ -23,6 +23,11 @@ export interface PackageRecommendation {
   dosageForm: string;
   marketingStatus?: string;
   isActive: boolean;
+  quantityNeeded?: number;
+  fillPrecision?: 'exact' | 'overfill' | 'underfill';
+  reasoning?: string;
+  confidenceScore?: number;
+  source?: 'ai' | 'algorithm';
 }
 
 export interface Explanation {
@@ -35,6 +40,23 @@ export interface ExcludedNDC {
   ndc: string;
   reason: string;
   marketingStatus?: string;
+}
+
+export interface AIInsights {
+  factors: string[];
+  considerations: string[];
+  rationale: string;
+  costEfficiency?: {
+    estimatedWaste: number;
+    rating: 'low' | 'medium' | 'high';
+  };
+}
+
+export interface Metadata {
+  usedAI: boolean;
+  algorithmicFallback?: boolean;
+  executionTime: number;
+  aiCost?: number;
 }
 
 export interface CalculateResponse {
@@ -53,6 +75,8 @@ export interface CalculateResponse {
     warnings: string[];
     excluded?: ExcludedNDC[];
     explanations: Explanation[];
+    aiInsights?: AIInsights;
+    metadata?: Metadata;
   };
   error?: {
     code: string;

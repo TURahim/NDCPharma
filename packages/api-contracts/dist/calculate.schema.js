@@ -4,7 +4,7 @@
  * Zod schemas for request/response validation
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.AIEnhancementSchema = exports.CalculateResponseSchema = exports.ExcludedNDCSchema = exports.ExplanationSchema = exports.PackageRecommendationSchema = exports.CalculateRequestSchema = void 0;
+exports.CalculateResponseSchema = exports.MetadataSchema = exports.AIInsightsSchema = exports.ExcludedNDCSchema = exports.ExplanationSchema = exports.PackageRecommendationSchema = exports.CalculateRequestSchema = void 0;
 const zod_1 = require("zod");
 /**
  * Calculate Request Schema
@@ -75,6 +75,26 @@ exports.PackageRecommendationSchema = zod_1.z.object({
      * Whether this NDC is active
      */
     isActive: zod_1.z.boolean(),
+    /**
+     * Quantity needed from this package
+     */
+    quantityNeeded: zod_1.z.number().optional(),
+    /**
+     * Fill precision (exact, overfill, underfill)
+     */
+    fillPrecision: zod_1.z.enum(['exact', 'overfill', 'underfill']).optional(),
+    /**
+     * AI reasoning for this recommendation (if AI was used)
+     */
+    reasoning: zod_1.z.string().optional(),
+    /**
+     * Confidence score (if AI was used)
+     */
+    confidenceScore: zod_1.z.number().min(0).max(1).optional(),
+    /**
+     * Source of recommendation (ai or algorithm)
+     */
+    source: zod_1.z.enum(['ai', 'algorithm']).optional(),
 });
 /**
  * Explanation entry
@@ -109,6 +129,52 @@ exports.ExcludedNDCSchema = zod_1.z.object({
      * Marketing status
      */
     marketingStatus: zod_1.z.string().optional(),
+});
+/**
+ * AI Insights Schema (optional)
+ * Provides AI-generated recommendations and reasoning
+ */
+exports.AIInsightsSchema = zod_1.z.object({
+    /**
+     * Key factors considered
+     */
+    factors: zod_1.z.array(zod_1.z.string()),
+    /**
+     * Important considerations
+     */
+    considerations: zod_1.z.array(zod_1.z.string()),
+    /**
+     * Overall rationale
+     */
+    rationale: zod_1.z.string(),
+    /**
+     * Cost efficiency analysis
+     */
+    costEfficiency: zod_1.z.object({
+        estimatedWaste: zod_1.z.number(),
+        rating: zod_1.z.enum(['low', 'medium', 'high']),
+    }).optional(),
+});
+/**
+ * Metadata Schema
+ */
+exports.MetadataSchema = zod_1.z.object({
+    /**
+     * Whether AI was used for recommendations
+     */
+    usedAI: zod_1.z.boolean(),
+    /**
+     * Whether algorithm was used as fallback
+     */
+    algorithmicFallback: zod_1.z.boolean().optional(),
+    /**
+     * Execution time in milliseconds
+     */
+    executionTime: zod_1.z.number(),
+    /**
+     * Estimated AI cost (if AI was used)
+     */
+    aiCost: zod_1.z.number().optional(),
 });
 /**
  * Calculate Response Schema
@@ -159,6 +225,14 @@ exports.CalculateResponseSchema = zod_1.z.object({
          * Step-by-step explanations
          */
         explanations: zod_1.z.array(exports.ExplanationSchema),
+        /**
+         * AI insights (if AI enhancement was used)
+         */
+        aiInsights: exports.AIInsightsSchema.optional(),
+        /**
+         * Metadata about the calculation
+         */
+        metadata: exports.MetadataSchema.optional(),
     }).optional(),
     /**
      * Error information (if failed)
@@ -168,25 +242,4 @@ exports.CalculateResponseSchema = zod_1.z.object({
         message: zod_1.z.string(),
         details: zod_1.z.unknown().optional(),
     }).optional(),
-});
-/**
- * AI Enhancement Info Schema (optional)
- */
-exports.AIEnhancementSchema = zod_1.z.object({
-    /**
-     * Whether AI was used
-     */
-    used: zod_1.z.boolean(),
-    /**
-     * AI confidence score
-     */
-    confidence: zod_1.z.number().min(0).max(1).optional(),
-    /**
-     * AI reasoning
-     */
-    reasoning: zod_1.z.string().optional(),
-    /**
-     * Estimated API cost
-     */
-    cost: zod_1.z.number().optional(),
 });
