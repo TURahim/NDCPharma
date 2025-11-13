@@ -122,3 +122,4 @@ export declare class FDAClient {
 export declare const fdaClient: FDAClient;
 export type { NDCPackage, NDCDetails, NDCValidationResult, FDAServiceConfig, PackageSize, ActiveIngredient, MarketingStatus, } from './internal/fdaTypes';
 export { filterByDosageForm, filterActivePackages, sortByPackageSize, } from './internal/fdaMapper';
+export { CachedFDAClient, cachedFdaClient, initFDACache, invalidateNDCLookupCache, invalidateNDCDetailsCache, } from './cachedClient';

@@ -4,7 +4,7 @@
  * Public API for FDA NDC Directory integration
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sortByPackageSize = exports.filterActivePackages = exports.filterByDosageForm = exports.fdaClient = exports.FDAClient = void 0;
+exports.invalidateNDCDetailsCache = exports.invalidateNDCLookupCache = exports.initFDACache = exports.cachedFdaClient = exports.CachedFDAClient = exports.sortByPackageSize = exports.filterActivePackages = exports.filterByDosageForm = exports.fdaClient = exports.FDAClient = void 0;
 const fdaService_1 = require("./internal/fdaService");
 const fdaMapper_1 = require("./internal/fdaMapper");
 const _domain_ndc_1 = require("@domain-ndc");
@@ -224,3 +224,10 @@ var fdaMapper_2 = require("./internal/fdaMapper");
 Object.defineProperty(exports, "filterByDosageForm", { enumerable: true, get: function () { return fdaMapper_2.filterByDosageForm; } });
 Object.defineProperty(exports, "filterActivePackages", { enumerable: true, get: function () { return fdaMapper_2.filterActivePackages; } });
 Object.defineProperty(exports, "sortByPackageSize", { enumerable: true, get: function () { return fdaMapper_2.sortByPackageSize; } });
+// Export cached client (requires Firestore initialization)
+var cachedClient_1 = require("./cachedClient");
+Object.defineProperty(exports, "CachedFDAClient", { enumerable: true, get: function () { return cachedClient_1.CachedFDAClient; } });
+Object.defineProperty(exports, "cachedFdaClient", { enumerable: true, get: function () { return cachedClient_1.cachedFdaClient; } });
+Object.defineProperty(exports, "initFDACache", { enumerable: true, get: function () { return cachedClient_1.initFDACache; } });
+Object.defineProperty(exports, "invalidateNDCLookupCache", { enumerable: true, get: function () { return cachedClient_1.invalidateNDCLookupCache; } });
+Object.defineProperty(exports, "invalidateNDCDetailsCache", { enumerable: true, get: function () { return cachedClient_1.invalidateNDCDetailsCache; } });

@@ -287,12 +287,15 @@ pnpm -r lint
 - 12 integration tests for complete flow
 - esbuild bundling for Firebase Functions
 
-### 🔄 Planned
+✅ **PR-07: Caching Layer & Performance Optimization** ⚡ NEW
+- Firestore-based cache service with TTL support
+- Cache-aside pattern for RxNorm and FDA clients
+- 30 comprehensive tests (100% passing)
+- TTLs: 24h for drugs, 1h for NDCs
+- Expected performance: 85% faster (cache hit)
+- ⚠️ **REQUIRES SERVER INTEGRATION** - See [Cache Integration Guide](PR-07-CACHE-INTEGRATION-GUIDE.md)
 
-- **PR-07: Caching Layer & Performance Optimization**
-  - Firestore cache abstraction with TTL
-  - Cache warming for common drugs
-  - Multi-level caching strategy
+### 🔄 Planned
   
 - **PR-08: Authentication & Authorization**
   - Firebase Authentication integration
@@ -541,6 +544,7 @@ GitHub Actions workflow automatically:
 - [PR-03 Summary](PR-03-COMPLETION-SUMMARY.md) - FDA Integration details (93 tests)
 - [PR-04 Summary](PR-04-COMPLETION-SUMMARY.md) - Quantity Calculation + Unit Converter (170 tests + bonus)
 - [PR-06 Summary](PR-06-COMPLETION-SUMMARY.md) - Main Calculator Endpoint & Orchestration (10 integration tests)
+- [PR-07 Cache Integration Guide](PR-07-CACHE-INTEGRATION-GUIDE.md) - ⚠️ **Server integration required** (30 tests)
 - [Product Requirements](PRD_Foundation_Health_NDC_Packaging_Quantity_Calculator.md) - Full PRD
 - [OpenAPI Spec](packages/api-contracts/openapi.yaml) - REST API documentation
 
@@ -628,6 +632,6 @@ For questions or issues:
 
 ---
 
-**Last Updated:** PR-06 Completion (Main Calculator Endpoint & Orchestration)  
-**Current Status:** 316+ tests passing (100%) | PR-01 through PR-06 Complete ✅  
-**Next Milestone:** PR-07 (Caching Layer & Performance Optimization)
+**Last Updated:** PR-07 Completion (Caching Layer - Server Integration Pending)  
+**Current Status:** 346+ tests passing (100%) | PR-01 through PR-07 Complete ✅  
+**Next Milestone:** Integrate cache into server, then PR-08 (Authentication & Authorization)
