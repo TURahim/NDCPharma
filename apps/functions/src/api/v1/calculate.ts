@@ -297,7 +297,7 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
       dosageForm: pkg.dosageForm,
       marketingStatus: String(pkg.marketingStatus),
       isActive: pkg.marketingStatus === 'ACTIVE' as any,
-      labelerName: pkg.labelerName,
+      labelerName: pkg.labeler,
     }));
     
     // Use smart package selection algorithm
