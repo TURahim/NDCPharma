@@ -112,51 +112,60 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     }
 
     // ==========================================
-    // STEP 2A: Get NDC list from RxNorm
+    // STEP 2: Fetch NDC packages from FDA
     // ==========================================
-    logger.debug('Fetching NDC list from RxNorm', { rxcui });
+    // Strategy: Use FDA's RxCUI search as primary source (most reliable)
+    // FDA automatically returns only currently-marketed NDCs with complete metadata
     
-    const ndcList = await getNdcsForRxcui(rxcui);
+    logger.debug('Fetching NDC packages from FDA by RxCUI', { rxcui });
     
-    if (!ndcList || ndcList.length === 0) {
-      logger.warn('No NDCs found in RxNorm, will try FDA by RxCUI as fallback', { rxcui });
-    } else {
-      logger.info('Retrieved NDC list from RxNorm', {
+    let allPackages: NDCPackage[];
+    
+    try {
+      // Primary: Query FDA directly by RxCUI (most reliable)
+      allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
+      
+      logger.info('Successfully retrieved packages from FDA', {
+        rxcui,
+        packageCount: allPackages.length,
+      });
+      
+      explanations.push({
+        step: 'fetch_packages_fda',
+        description: `Retrieved ${allPackages.length} NDC packages from FDA by RxCUI`,
+        details: {
+          rxcui,
+          source: 'openFDA',
+          method: 'RxCUI search',
+        },
+      });
+    } catch (error) {
+      // Fallback: Try RxNorm NDC list + FDA batch lookup
+      logger.warn('FDA RxCUI search failed, trying RxNorm NDC list', { 
+        rxcui,
+        error: error instanceof Error ? error : new Error(String(error)),
+      });
+      
+      const ndcList = await getNdcsForRxcui(rxcui);
+      
+      if (ndcList.length === 0) {
+        throw new Error(`No NDC codes found for drug (RxCUI: ${rxcui})`);
+      }
+      
+      logger.info('Retrieved NDC list from RxNorm, fetching details from FDA', {
         rxcui,
         ndcCount: ndcList.length,
       });
       
-      explanations.push({
-        step: 'fetch_ndcs_rxnorm',
-        description: `Retrieved ${ndcList.length} NDC codes from RxNorm`,
-        details: {
-          rxcui,
-          source: 'RxNorm',
-        },
-      });
-    }
-    
-    // ==========================================
-    // STEP 2B: Fetch package details from FDA
-    // ==========================================
-    logger.debug('Fetching package details from FDA', { ndcCount: ndcList.length });
-    
-    let allPackages: NDCPackage[];
-    
-    if (ndcList.length > 0) {
-      // Use NDC list from RxNorm to fetch FDA details
       allPackages = await fdaClient.getPackagesByNdcList(ndcList, {});
-    } else {
-      // Fallback: Query FDA by RxCUI (less reliable)
-      logger.info('Using FDA RxCUI search as fallback', { rxcui });
-      allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
       
       explanations.push({
-        step: 'fetch_ndcs_fda_fallback',
-        description: 'Using FDA RxCUI search as fallback (RxNorm had no NDCs)',
+        step: 'fetch_packages_rxnorm_fallback',
+        description: `Retrieved ${ndcList.length} NDCs from RxNorm, fetched ${allPackages.length} package details from FDA`,
         details: {
           rxcui,
-          source: 'openFDA',
+          source: 'RxNorm + openFDA',
+          method: 'NDC batch lookup',
         },
       });
     }
@@ -165,18 +174,9 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
       throw new Error(`No NDC packages found for drug (RxCUI: ${rxcui})`);
     }
     
-    logger.info('Retrieved package details from FDA', {
+    logger.info('Package retrieval complete', {
       rxcui,
       totalPackages: allPackages.length,
-    });
-    
-    explanations.push({
-      step: 'enrich_packages_fda',
-      description: `Enriched ${allPackages.length} packages with FDA data (dosage form, marketing status, labeler)`,
-      details: {
-        rxcui,
-        source: 'openFDA',
-      },
     });
 
     // Filter active packages
