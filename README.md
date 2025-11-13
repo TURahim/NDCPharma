@@ -482,18 +482,22 @@ pnpm -r coverage      # Generate coverage report
 ```
 
 ### Test Coverage (Current)
-- **Total: 306+ tests passing** (100%)
+- **Total: 316+ tests passing** (100%)
 - **PR-01**: Infrastructure setup (included in core packages)
 - **PR-02**: RxNorm client: 51 tests ✅
 - **PR-03**: 
   - FDA client (fdaService): 14 tests ✅
   - FDA mapper: 36 tests ✅
   - NDC validation: 43 tests ✅
-- **PR-04** (NEW):
+- **PR-04**:
   - Quantity calculations: 28 tests ✅
   - Package matching: 43 tests ✅
   - Unit converter: 99 tests ✅ (BONUS)
-- **PR-05/06**: Calculator endpoint: 12 integration tests ✅
+- **PR-06** (NEW):
+  - Calculator endpoint: 10 integration tests ✅
+  - Full orchestration flow: 5 tests ✅
+  - Error handling: 4 tests ✅
+  - Response validation: 1 test ✅
 - **Target**: >80% coverage (achieved 100%+)
 
 ### Run Specific Tests
@@ -536,6 +540,7 @@ GitHub Actions workflow automatically:
 - [Backend Task List](backend-task-list%20(1).md) - Complete 6-PR development plan (PR-01 through PR-06 completed ✅)
 - [PR-03 Summary](PR-03-COMPLETION-SUMMARY.md) - FDA Integration details (93 tests)
 - [PR-04 Summary](PR-04-COMPLETION-SUMMARY.md) - Quantity Calculation + Unit Converter (170 tests + bonus)
+- [PR-06 Summary](PR-06-COMPLETION-SUMMARY.md) - Main Calculator Endpoint & Orchestration (10 integration tests)
 - [Product Requirements](PRD_Foundation_Health_NDC_Packaging_Quantity_Calculator.md) - Full PRD
 - [OpenAPI Spec](packages/api-contracts/openapi.yaml) - REST API documentation
 
@@ -623,6 +628,6 @@ For questions or issues:
 
 ---
 
-**Last Updated:** PR-04 Completion (Quantity Calculation + Unit Converter)  
-**Current Status:** 306+ tests passing (100%) | PR-01 through PR-06 Complete ✅  
+**Last Updated:** PR-06 Completion (Main Calculator Endpoint & Orchestration)  
+**Current Status:** 316+ tests passing (100%) | PR-01 through PR-06 Complete ✅  
 **Next Milestone:** PR-07 (Caching Layer & Performance Optimization)
