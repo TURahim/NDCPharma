@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CalculationCache",
+  "description": "Firestore schema for cached calculation data (drug normalization, NDC lookups)",
+  "type": "object",
+  "required": ["key", "value", "expiresAt", "createdAt", "updatedAt", "ttl"],
+  "properties": {
+    "key": {
+      "type": "string",
+      "description": "Original cache key (before hashing)",
+      "examples": [
+        "drug:norm:lisinopril",
+        "ndc:lookup:314076",
+        "rxcui:details:314076",
+        "fda:validate:00071015623"
+      ]
+    },
+    "value": {
+      "type": "object",
+      "description": "Cached value (can be any JSON object)",
+      "examples": [
+        {
+          "rxcui": "314076",
+          "name": "Lisinopril 10 MG Oral Tablet",
+          "confidence": 0.95
+        }
+      ]
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this cache entry expires (ISO 8601 timestamp)"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this cache entry was created (ISO 8601 timestamp)"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this cache entry was last updated (ISO 8601 timestamp)"
+    },
+    "ttl": {
+      "type": "number",
+      "description": "Time to live in milliseconds",
+      "examples": [86400000, 3600000]
+    }
+  },
+  "indexes": [
+    {
+      "fields": [
+        { "fieldPath": "key", "order": "ASCENDING" }
+      ],
+      "description": "Index for pattern matching invalidation"
+    },
+    {
+      "fields": [
+        { "fieldPath": "expiresAt", "order": "ASCENDING" }
+      ],
+      "description": "Index for cleanup of expired entries"
+    }
+  ],
+  "notes": {
+    "ttl": {
+      "drugNormalization": "24 hours (86400000 ms)",
+      "ndcLookup": "1 hour (3600000 ms)",
+      "rxcuiDetails": "24 hours (86400000 ms)",
+      "fdaValidation": "1 hour (3600000 ms)"
+    },
+    "documentId": "SHA-256 hash of the 'key' field to ensure valid Firestore document ID",
+    "maxSize": "10,000 entries (configurable in cache service)",
+    "cleanupInterval": "Every hour (3600000 ms)"
+  }
+}
+

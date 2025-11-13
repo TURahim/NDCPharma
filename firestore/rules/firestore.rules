@@ -1,0 +1,66 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isAdmin() {
+      return isAuthenticated() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+    
+    // Calculation Cache - Cloud Functions only
+    match /calculationCache/{docId} {
+      // Only Cloud Functions can read/write cache
+      // Deny all direct client access
+      allow read, write: if false;
+    }
+    
+    // Calculation Logs - Audit Trail
+    match /calculationLogs/{logId} {
+      // Cloud Functions can write logs (write-once)
+      allow create: if false; // Cloud Functions use admin SDK, bypasses rules
+      
+      // Users can read their own logs
+      allow read: if isAuthenticated() && 
+                     (resource.data.userId == request.auth.uid || isAdmin());
+      
+      // No updates or deletes allowed (tamper-proof audit trail)
+      allow update, delete: if false;
+    }
+    
+    // User Activity - For rate limiting and analytics
+    match /userActivity/{userId} {
+      // Users can read their own activity
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Only Cloud Functions can write activity (via admin SDK)
+      allow write: if false;
+    }
+    
+    // Users collection - For authentication and RBAC
+    match /users/{userId} {
+      // Users can read their own profile
+      allow read: if isOwner(userId) || isAdmin();
+      
+      // Users can update their own profile (but not role)
+      allow update: if isOwner(userId) && 
+                       !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']);
+      
+      // Only admins can create/delete users
+      allow create, delete: if isAdmin();
+    }
+    
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+

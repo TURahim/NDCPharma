@@ -10,6 +10,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
+    "@ndc/core-guardrails": "workspace:*",
     "firebase-admin": "^12.0.0"
   },
   "devDependencies": {

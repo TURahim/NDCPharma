@@ -3,5 +3,5 @@
  * Cache abstraction with Firestore adapter
  */
 
-export * from "./types";
-
+export * from './types';
+export * from './cacheService';
