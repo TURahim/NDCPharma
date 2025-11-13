@@ -108,8 +108,8 @@ export function Hero() {
       if (err instanceof APIError) {
         let errorMessage = err.message;
         if (err.code === 'CALCULATION_ERROR') {
-          if (err.message.includes('No results found')) {
-            errorMessage = `Could not find drug information in FDA database. Please verify the drug name is spelled correctly and includes strength (e.g., "Lisinopril 10 MG Oral Tablet").`;
+          if (err.message.includes('No matches found') || err.message.includes('No results found')) {
+            errorMessage = `Could not find drug information in FDA database. This drug may be discontinued, not FDA-approved, or not available in the US market. Please try a different medication.`;
           } else if (err.message.includes('No NDC packages found')) {
             errorMessage = `${err.message} This may occur if the drug is not available in the FDA NDC Directory or if it's a compound medication.`;
           }
