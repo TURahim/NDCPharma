@@ -73,8 +73,12 @@ export async function searchDrugs(
       score: candidate.score,
     }));
 
-    // Sort alphabetically by name
-    results.sort((a, b) => a.name.localeCompare(b.name));
+    // Sort alphabetically by name (with null safety)
+    results.sort((a, b) => {
+      const nameA = a.name || '';
+      const nameB = b.name || '';
+      return nameA.localeCompare(nameB);
+    });
 
     return results;
   } catch (error) {
