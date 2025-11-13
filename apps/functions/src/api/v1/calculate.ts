@@ -158,7 +158,11 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     });
 
     // Filter active packages
-    const activePackages = allPackages.filter((pkg: NDCPackage) => pkg.marketingStatus === 'ACTIVE' as any);
+    const activePackages = allPackages.filter((pkg: NDCPackage) => 
+      pkg.marketingStatus && typeof pkg.marketingStatus === 'object' 
+        ? pkg.marketingStatus.isActive 
+        : false
+    );
     const inactiveCount = allPackages.length - activePackages.length;
     
     if (inactiveCount > 0) {
@@ -170,12 +174,18 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
       
       // Track excluded NDCs
       allPackages
-        .filter((pkg: NDCPackage) => pkg.marketingStatus !== 'ACTIVE' as any)
+        .filter((pkg: NDCPackage) => 
+          !pkg.marketingStatus || 
+          (typeof pkg.marketingStatus === 'object' && !pkg.marketingStatus.isActive)
+        )
         .forEach((pkg: NDCPackage) => {
+          const status = typeof pkg.marketingStatus === 'object' 
+            ? pkg.marketingStatus.status 
+            : 'unknown';
           excluded.push({
             ndc: pkg.ndc,
-            reason: `Inactive or discontinued (status: ${String(pkg.marketingStatus)})`,
-            marketingStatus: String(pkg.marketingStatus),
+            reason: `Inactive or discontinued (status: ${status})`,
+            marketingStatus: status,
           });
         });
     }
@@ -273,8 +283,12 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
         unit: pkg.packageSize.unit,
       },
       dosageForm: pkg.dosageForm,
-      marketingStatus: String(pkg.marketingStatus),
-      isActive: pkg.marketingStatus === 'ACTIVE' as any,
+      marketingStatus: typeof pkg.marketingStatus === 'object' 
+        ? pkg.marketingStatus.status 
+        : 'unknown',
+      isActive: typeof pkg.marketingStatus === 'object' 
+        ? pkg.marketingStatus.isActive 
+        : false,
       labelerName: pkg.labeler,
     }));
     
