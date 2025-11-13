@@ -313,6 +313,8 @@ export class FDAClient {
             genericName: details.genericName,
             brandName: details.brandName,
             activeIngredients: details.activeIngredients,
+            route: details.route || [],
+            labeler: details.labeler,
           };
           allPackages.push(pkg);
         }

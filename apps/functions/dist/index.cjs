@@ -35058,6 +35058,7 @@ var envSchema = external_exports.object({
   // Firebase Configuration
   FIREBASE_PROJECT_ID: external_exports.string().optional(),
   FIREBASE_REGION: external_exports.string().default("us-central1"),
+  GCP_PROJECT_ID: external_exports.string().default("ndcpharma-8f3c6"),
   // External API Keys (ALL OPTIONAL per refactor requirements)
   RXNORM_API_KEY: external_exports.string().optional(),
   // RxNorm API is public, key optional
@@ -35067,7 +35068,7 @@ var envSchema = external_exports.object({
   // OpenAI is feature-flagged, OFF by default
   // API Configuration
   RXNORM_BASE_URL: external_exports.string().url().default("https://rxnav.nlm.nih.gov/REST"),
-  FDA_BASE_URL: external_exports.string().url().default("https://api.fda.gov/drug/ndc.json"),
+  FDA_BASE_URL: external_exports.string().url().default("https://api.fda.gov"),
   OPENAI_MODEL: external_exports.string().default("gpt-4-turbo-preview"),
   // Performance Settings
   API_TIMEOUT_MS: external_exports.string().transform(Number).pipe(external_exports.number().positive()).default("2000"),
@@ -39886,21 +39887,6 @@ async function nameToRxCui(name, opts) {
     };
   }
 }
-async function getNdcsForRxcui(rxcui, opts) {
-  try {
-    const response = await rxnormService.getNDCs(rxcui);
-    if (!response.ndcGroup?.ndcList) {
-      return [];
-    }
-    const ndcs = response.ndcGroup.ndcList.ndc || [];
-    if (opts?.maxResults) {
-      return ndcs.slice(0, opts.maxResults);
-    }
-    return ndcs;
-  } catch (error) {
-    return [];
-  }
-}
 
 // ../../packages/clients-rxnorm/src/cachedFacade.ts
 var logger3 = createLogger({ service: "RxNormCachedFacade" });
@@ -41187,7 +41173,9 @@ var FDAClient = class {
             productNdc: details.productNdc,
             genericName: details.genericName,
             brandName: details.brandName,
-            activeIngredients: details.activeIngredients
+            activeIngredients: details.activeIngredients,
+            route: details.route || [],
+            labeler: details.labeler
           };
           allPackages.push(pkg);
         }
@@ -49853,54 +49841,37 @@ async function calculateHandler(req, res) {
     } else {
       throw new Error("Either drug name or RxCUI must be provided");
     }
-    logger6.debug("Fetching NDC list from RxNorm", { rxcui });
-    const ndcList = await getNdcsForRxcui(rxcui);
-    if (!ndcList || ndcList.length === 0) {
-      logger6.warn("No NDCs found in RxNorm, will try FDA by RxCUI as fallback", { rxcui });
+    logger6.debug("Fetching NDC packages from FDA by RxCUI", { rxcui });
+    logger6.info("Attempting FDA RxCUI search", { rxcui, limit: 100 });
+    const allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
+    logger6.info("FDA RxCUI search completed", {
+      rxcui,
+      packageCount: allPackages?.length || 0,
+      hasResults: !!(allPackages && allPackages.length > 0)
+    });
+    if (allPackages && allPackages.length > 0) {
+      explanations.push({
+        step: "fetch_packages_fda",
+        description: `Retrieved ${allPackages.length} NDC packages from FDA by RxCUI`,
+        details: {
+          rxcui,
+          source: "openFDA",
+          method: "RxCUI search"
+        }
+      });
     } else {
-      logger6.info("Retrieved NDC list from RxNorm", {
+      logger6.error("FDA RxCUI search returned no packages", {
         rxcui,
-        ndcCount: ndcList.length
+        drugName
       });
-      explanations.push({
-        step: "fetch_ndcs_rxnorm",
-        description: `Retrieved ${ndcList.length} NDC codes from RxNorm`,
-        details: {
-          rxcui,
-          source: "RxNorm"
-        }
-      });
-    }
-    logger6.debug("Fetching package details from FDA", { ndcCount: ndcList.length });
-    let allPackages;
-    if (ndcList.length > 0) {
-      allPackages = await fdaClient.getPackagesByNdcList(ndcList, {});
-    } else {
-      logger6.info("Using FDA RxCUI search as fallback", { rxcui });
-      allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
-      explanations.push({
-        step: "fetch_ndcs_fda_fallback",
-        description: "Using FDA RxCUI search as fallback (RxNorm had no NDCs)",
-        details: {
-          rxcui,
-          source: "openFDA"
-        }
-      });
+      throw new Error(`FDA has no NDC packages for RxCUI ${rxcui}. This may indicate an issue with the FDA API or the RxCUI.`);
     }
     if (!allPackages || allPackages.length === 0) {
       throw new Error(`No NDC packages found for drug (RxCUI: ${rxcui})`);
     }
-    logger6.info("Retrieved package details from FDA", {
+    logger6.info("Package retrieval complete", {
       rxcui,
       totalPackages: allPackages.length
-    });
-    explanations.push({
-      step: "enrich_packages_fda",
-      description: `Enriched ${allPackages.length} packages with FDA data (dosage form, marketing status, labeler)`,
-      details: {
-        rxcui,
-        source: "openFDA"
-      }
     });
     const activePackages = allPackages.filter((pkg) => pkg.marketingStatus === "ACTIVE");
     const inactiveCount = allPackages.length - activePackages.length;
@@ -49985,7 +49956,7 @@ async function calculateHandler(req, res) {
       dosageForm: pkg.dosageForm,
       marketingStatus: String(pkg.marketingStatus),
       isActive: pkg.marketingStatus === "ACTIVE",
-      labelerName: pkg.labelerName
+      labelerName: pkg.labeler
     }));
     const selection = chooseBestPackage(packageCandidates, totalQuantity);
     warnings.push(...selection.warnings);

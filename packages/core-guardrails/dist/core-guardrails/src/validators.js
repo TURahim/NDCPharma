@@ -143,11 +143,15 @@ function validateInteger(value, fieldName) {
  * Validate email format
  */
 function validateEmail(email) {
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
+    if (!email) {
         throw new Error("Invalid email format");
     }
-    return email.toLowerCase().trim();
+    const trimmed = email.toLowerCase().trim();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(trimmed)) {
+        throw new Error("Invalid email format");
+    }
+    return trimmed;
 }
 /**
  * Validate enum value

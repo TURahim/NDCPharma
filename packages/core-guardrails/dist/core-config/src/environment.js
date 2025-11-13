@@ -54,13 +54,14 @@ const envSchema = zod_1.z.object({
     // Firebase Configuration
     FIREBASE_PROJECT_ID: zod_1.z.string().optional(),
     FIREBASE_REGION: zod_1.z.string().default("us-central1"),
+    GCP_PROJECT_ID: zod_1.z.string().default("ndcpharma-8f3c6"),
     // External API Keys (ALL OPTIONAL per refactor requirements)
     RXNORM_API_KEY: zod_1.z.string().optional(), // RxNorm API is public, key optional
     FDA_API_KEY: zod_1.z.string().optional(), // FDA API key for higher rate limits
     OPENAI_API_KEY: zod_1.z.string().optional(), // OpenAI is feature-flagged, OFF by default
     // API Configuration
     RXNORM_BASE_URL: zod_1.z.string().url().default("https://rxnav.nlm.nih.gov/REST"),
-    FDA_BASE_URL: zod_1.z.string().url().default("https://api.fda.gov/drug/ndc.json"),
+    FDA_BASE_URL: zod_1.z.string().url().default("https://api.fda.gov"),
     OPENAI_MODEL: zod_1.z.string().default("gpt-4-turbo-preview"),
     // Performance Settings
     API_TIMEOUT_MS: zod_1.z.string().transform(Number).pipe(zod_1.z.number().positive()).default("2000"),

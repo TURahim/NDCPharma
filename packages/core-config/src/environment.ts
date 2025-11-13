@@ -21,6 +21,7 @@ const envSchema = z.object({
   // Firebase Configuration
   FIREBASE_PROJECT_ID: z.string().optional(),
   FIREBASE_REGION: z.string().default("us-central1"),
+  GCP_PROJECT_ID: z.string().default("ndcpharma-8f3c6"),
 
   // External API Keys (ALL OPTIONAL per refactor requirements)
   RXNORM_API_KEY: z.string().optional(), // RxNorm API is public, key optional

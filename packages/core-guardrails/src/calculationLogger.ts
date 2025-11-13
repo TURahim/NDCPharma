@@ -73,7 +73,13 @@ export async function logCalculation(
     // Redact any potential PHI from the log entry
     const redactedEntry = {
       ...entry,
-      request: redactPHI(entry.request),
+      request: {
+        ...entry.request,
+        drug: {
+          ...entry.request.drug,
+          name: entry.request.drug.name ? redactPHI(entry.request.drug.name) : undefined,
+        },
+      },
       response: {
         ...entry.response,
         ...(entry.response.error && {

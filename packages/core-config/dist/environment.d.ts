@@ -10,6 +10,7 @@ declare const envSchema: z.ZodObject<{
     NODE_ENV: z.ZodDefault<z.ZodEnum<["development", "staging", "production", "test"]>>;
     FIREBASE_PROJECT_ID: z.ZodOptional<z.ZodString>;
     FIREBASE_REGION: z.ZodDefault<z.ZodString>;
+    GCP_PROJECT_ID: z.ZodDefault<z.ZodString>;
     RXNORM_API_KEY: z.ZodOptional<z.ZodString>;
     FDA_API_KEY: z.ZodOptional<z.ZodString>;
     OPENAI_API_KEY: z.ZodOptional<z.ZodString>;
@@ -32,6 +33,7 @@ declare const envSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     NODE_ENV: "production" | "development" | "staging" | "test";
     FIREBASE_REGION: string;
+    GCP_PROJECT_ID: string;
     RXNORM_BASE_URL: string;
     FDA_BASE_URL: string;
     OPENAI_MODEL: string;
@@ -56,6 +58,7 @@ declare const envSchema: z.ZodObject<{
     NODE_ENV?: "production" | "development" | "staging" | "test" | undefined;
     FIREBASE_PROJECT_ID?: string | undefined;
     FIREBASE_REGION?: string | undefined;
+    GCP_PROJECT_ID?: string | undefined;
     RXNORM_API_KEY?: string | undefined;
     FDA_API_KEY?: string | undefined;
     OPENAI_API_KEY?: string | undefined;
@@ -82,6 +85,7 @@ declare const envSchema: z.ZodObject<{
 export declare const env: {
     NODE_ENV: "production" | "development" | "staging" | "test";
     FIREBASE_REGION: string;
+    GCP_PROJECT_ID: string;
     RXNORM_BASE_URL: string;
     FDA_BASE_URL: string;
     OPENAI_MODEL: string;

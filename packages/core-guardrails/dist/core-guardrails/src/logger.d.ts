@@ -1,18 +1,33 @@
 /**
  * Structured Logging Utility
  * Provides consistent logging across the application with support for GCP Cloud Logging
+ *
+ * Features:
+ * - Correlation IDs for distributed tracing
+ * - GCP Cloud Logging integration (structured JSON)
+ * - PHI-safe logging (use with redaction middleware)
+ * - Request/response lifecycle tracking
+ * - Error tracking with stack traces
  */
 export type LogLevel = "debug" | "info" | "warn" | "error" | "critical";
 export interface LogContext {
     userId?: string;
     requestId?: string;
+    correlationId?: string;
+    traceId?: string;
+    spanId?: string;
     method?: string;
     path?: string;
     statusCode?: number;
     executionTime?: number;
     error?: Error;
+    service?: string;
     [key: string]: unknown;
 }
+/**
+ * Generate a correlation ID for request tracking
+ */
+export declare function generateCorrelationId(): string;
 /**
  * Logger class with convenient methods
  */

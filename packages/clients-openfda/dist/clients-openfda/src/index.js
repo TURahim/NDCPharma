@@ -245,11 +245,12 @@ class FDAClient {
                         packageSize: details.packageSize,
                         dosageForm: details.dosageForm,
                         marketingStatus: details.marketingStatus,
-                        labelerName: details.labelerName,
                         productNdc: details.productNdc,
                         genericName: details.genericName,
                         brandName: details.brandName,
                         activeIngredients: details.activeIngredients,
+                        route: details.route || [],
+                        labeler: details.labeler,
                     };
                     allPackages.push(pkg);
                 }
