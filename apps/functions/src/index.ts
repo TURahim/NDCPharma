@@ -9,9 +9,10 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 
-import { CalculateRequestSchema } from '@api-contracts';
+import { CalculateRequestSchema, AlternativesRequestSchema } from '@api-contracts';
 import { healthCheck } from './api/v1/health';
 import { calculateHandler } from './api/v1/calculate';
+import { alternativesHandler } from './api/v1/alternatives';
 import {
   getSystemAnalytics,
   getUserAnalytics,
@@ -56,6 +57,15 @@ app.post(
   asyncHandler(rateLimitMiddleware), // Rate limiting based on auth status
   validateRequest(CalculateRequestSchema),
   asyncHandler(calculateHandler)
+);
+
+// Alternatives endpoint (requires authentication)
+app.post(
+  '/v1/alternatives',
+  asyncHandler(verifyToken), // Requires authentication
+  asyncHandler(rateLimitMiddleware),
+  validateRequest(AlternativesRequestSchema),
+  asyncHandler(alternativesHandler)
 );
 
 // Analytics endpoints (require authentication)

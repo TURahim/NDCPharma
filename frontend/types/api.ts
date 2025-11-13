@@ -59,6 +59,26 @@ export interface Metadata {
   aiCost?: number;
 }
 
+export interface AlternativeDrug {
+  rxcui: string;
+  name: string;
+  comparisonText: string;
+}
+
+export interface AlternativeResponse {
+  success: boolean;
+  data?: {
+    originalDrug: string;
+    summary?: string;
+    alternatives: AlternativeDrug[];
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: Record<string, unknown>;
+  };
+}
+
 export interface CalculateResponse {
   success: boolean;
   data?: {

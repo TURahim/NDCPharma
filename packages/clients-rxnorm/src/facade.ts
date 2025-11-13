@@ -222,3 +222,15 @@ export async function rxcuiToNdcs(
   }));
 }
 
+/**
+ * Get alternative drugs for a given RxCUI
+ * Finds related drugs in the same therapeutic class or with the same ingredient
+ * 
+ * @param rxcui - RxNorm Concept Unique Identifier
+ * @returns Array of related drugs
+ */
+export async function getAlternativeDrugs(rxcui: string) {
+  const { findRelatedDrugs } = await import('./internal/alternativeFinder');
+  return findRelatedDrugs(rxcui);
+}
+

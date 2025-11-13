@@ -8,11 +8,15 @@ export {
   nameToRxCui,
   rxcuiToNdcs,
   getNdcsForRxcui,
+  getAlternativeDrugs,
   type NormalizationOptions,
   type RxCuiResult,
   type NdcInfo,
   type FetchOptions,
 } from "./facade";
+
+// Export alternative finder types
+export type { RelatedDrug } from "./internal/alternativeFinder";
 
 // Cached interface exports (requires Firestore initialization)
 export {

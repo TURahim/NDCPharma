@@ -40,3 +40,11 @@ export {
   detectPHI,
 } from './internal/phiSanitizer';
 
+// Export alternative comparator
+export {
+  compareAlternatives,
+  type DrugComparisonRequest,
+  type DrugComparisonResponse,
+  type AlternativeComparison,
+} from './internal/alternativeComparator';
+

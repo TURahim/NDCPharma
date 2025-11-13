@@ -7,8 +7,8 @@
 
 import { useState } from 'react';
 import { Wand2 } from 'lucide-react';
-import { calculateNDC, APIError } from '@/lib/api-client';
-import { CalculateResponse } from '@/types/api';
+import { calculateNDC, APIError, getAlternativeDrugs } from '@/lib/api-client';
+import { CalculateResponse, AlternativeDrug } from '@/types/api';
 import { DrugAutocomplete } from '@/components/ui/drug-autocomplete';
 import { Button } from '@/components/ui/button';
 import { StatusIndicators } from '@/components/dashboard/status-indicators';
@@ -16,15 +16,19 @@ import { AIInsightsPanel } from '@/components/calculator/ai-insights-panel';
 import { MultiPackHelper } from '@/components/dashboard/multipack-helper';
 import { HelpPopover } from '@/components/ui/help-popover';
 import { GuidedMode } from '@/components/calculator/guided-mode';
+import { AlternativeDrugsModal } from '@/components/calculator/alternative-drugs-modal';
+import { DrugComparisonView } from '@/components/calculator/drug-comparison-view';
 import { CalculationStorage } from '@/lib/calculation-storage';
 import { generateId } from '@/lib/calculation-storage';
 import { StoredCalculation } from '@/types/calculation';
+import { useAuth } from '@/lib/auth-context';
 
 interface EnhancedCalculatorProps {
   initialData?: Partial<StoredCalculation>;
 }
 
 export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}) {
+  const { getIdToken, user } = useAuth();
   const [drugInput, setDrugInput] = useState(initialData?.drug?.name || '');
   const [selectedRxcui, setSelectedRxcui] = useState<string | undefined>(initialData?.drug?.rxcui);
   const [sig, setSig] = useState(initialData?.sig || '');
@@ -36,6 +40,15 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
   const [error, setError] = useState<string | null>(null);
   
   const [showGuidedMode, setShowGuidedMode] = useState(false);
+  
+  // Alternatives state
+  const [showAlternativesModal, setShowAlternativesModal] = useState(false);
+  const [alternatives, setAlternatives] = useState<AlternativeDrug[]>([]);
+  const [alternativesSummary, setAlternativesSummary] = useState<string>();
+  const [comparisonView, setComparisonView] = useState<{
+    original: string;
+    alternative: AlternativeDrug;
+  } | null>(null);
 
   const parseSig = (sigText: string) => {
     const lower = sigText.toLowerCase();
@@ -114,13 +127,45 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
       }
     } catch (err) {
       if (err instanceof APIError) {
+        // Check if this is a "drug not found" error and user is authenticated
+        if (err.code === 'CALCULATION_ERROR' && 
+            (err.message.includes('No matches found') || err.message.includes('No results found')) &&
+            user && selectedRxcui) {
+          
+          // Try to fetch alternatives
+          try {
+            const idToken = await getIdToken();
+            const altResponse = await getAlternativeDrugs(
+              { name: drugInput, rxcui: selectedRxcui },
+              idToken
+            );
+            
+            if (altResponse.success && altResponse.data && altResponse.data.alternatives.length > 0) {
+              // Show alternatives modal
+              setAlternatives(altResponse.data.alternatives);
+              setAlternativesSummary(altResponse.data.summary);
+              setShowAlternativesModal(true);
+              setError(null); // Clear error since we're showing alternatives
+              return; // Don't set error message
+            }
+          } catch (altError) {
+            // If alternatives fail, continue with normal error handling
+            console.error('Failed to fetch alternatives:', altError);
+          }
+        }
+        
         // Format user-friendly error messages
         let errorMessage = err.message;
         
         // Add more context for specific error codes
         if (err.code === 'CALCULATION_ERROR') {
           if (err.message.includes('No matches found') || err.message.includes('No results found')) {
-            errorMessage = `Could not find drug information in FDA database. This drug may be discontinued, not FDA-approved, or not available in the US market. Please try a different medication.`;
+            errorMessage = `Could not find drug information in FDA database. This drug may be discontinued, not FDA-approved, or not available in the US market.`;
+            if (!user) {
+              errorMessage += ' Sign in to see alternative medications.';
+            } else {
+              errorMessage += ' No alternatives found.';
+            }
           } else if (err.message.includes('No NDC packages found')) {
             errorMessage = `${err.message} This may occur if the drug is not available in the FDA NDC Directory or if it's a compound medication.`;
           }
@@ -335,6 +380,51 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
         <GuidedMode
           onComplete={handleGuidedModeComplete}
           onClose={() => setShowGuidedMode(false)}
+        />
+      )}
+
+      {/* Alternatives Modal */}
+      {showAlternativesModal && (
+        <AlternativeDrugsModal
+          isOpen={showAlternativesModal}
+          onClose={() => setShowAlternativesModal(false)}
+          originalDrug={drugInput}
+          summary={alternativesSummary}
+          alternatives={alternatives}
+          onSelectAlternative={(rxcui, name) => {
+            // Find the full alternative data
+            const alt = alternatives.find(a => a.rxcui === rxcui);
+            if (alt) {
+              setComparisonView({
+                original: drugInput,
+                alternative: alt,
+              });
+            }
+          }}
+        />
+      )}
+
+      {/* Drug Comparison View */}
+      {comparisonView && (
+        <DrugComparisonView
+          originalDrug={comparisonView.original}
+          alternativeDrug={comparisonView.alternative.name}
+          comparisonText={comparisonView.alternative.comparisonText}
+          onConfirm={() => {
+            // Pre-fill form with alternative drug
+            setDrugInput(comparisonView.alternative.name);
+            setSelectedRxcui(comparisonView.alternative.rxcui);
+            
+            // Close all modals
+            setComparisonView(null);
+            setShowAlternativesModal(false);
+            
+            // Clear error
+            setError(null);
+          }}
+          onCancel={() => {
+            setComparisonView(null);
+          }}
         />
       )}
     </>

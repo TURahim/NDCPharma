@@ -31,6 +31,35 @@ export class FDAClient {
   }
 
   /**
+   * Check if a drug is available in the FDA NDC Directory
+   * Quick check to verify if an RxCUI has any NDC records
+   * 
+   * @param rxcui RxNorm Concept Unique Identifier
+   * @returns True if drug has FDA NDC records, false otherwise
+   * 
+   * @example
+   * ```typescript
+   * const isAvailable = await fdaClient.checkDrugAvailability('104377');
+   * if (!isAvailable) {
+   *   console.log('Drug not available in FDA database');
+   * }
+   * ```
+   */
+  async checkDrugAvailability(rxcui: string): Promise<boolean> {
+    try {
+      const response = await this.service.searchByRxCUI(rxcui, {
+        limit: 1,
+        skip: 0,
+      });
+
+      return !!(response.results && response.results.length > 0);
+    } catch (error) {
+      // If search fails, assume not available
+      return false;
+    }
+  }
+
+  /**
    * Get NDC packages by RxCUI
    * Returns all NDC packages associated with a given RxCUI
    * 
