@@ -207,7 +207,7 @@ export function Hero() {
                 <Button
                   type="submit"
                   disabled={isLoading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold"
+                  className="w-auto bg-blue-600 hover:bg-blue-700 text-white py-3 px-8 rounded-lg font-semibold"
                 >
                   {isLoading ? (
                     <>

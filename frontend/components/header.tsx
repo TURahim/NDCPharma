@@ -12,12 +12,12 @@ export function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <div className="flex items-center gap-2">
+          <Link href="/" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-400 flex items-center justify-center">
               <span className="text-white font-bold text-lg">Φ</span>
             </div>
             <span className="font-bold text-lg text-gray-900">PharmaDirect</span>
-          </div>
+          </Link>
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex gap-8">
@@ -33,7 +33,7 @@ export function Header() {
           </nav>
 
           {/* CTA Button */}
-          <div className="hidden md:flex gap-4">
+          <div className="hidden md:flex gap-4 items-center">
             <Link href="/auth/signin" className="text-blue-600 hover:text-blue-700 font-medium transition">
               Sign In
             </Link>
