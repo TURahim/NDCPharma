@@ -50,11 +50,16 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     if (request.drug.rxcui) {
       // RxCUI provided, use directly
       rxcui = request.drug.rxcui;
-      logger.debug('Using provided RxCUI', { rxcui });
+      drugName = request.drug.name || 'Unknown Drug';
+      logger.debug('Using provided RxCUI', { rxcui, drugName });
+      
+      // Note: dosageForm and strength will be enriched from FDA data later
+      dosageForm = undefined;
+      strength = undefined;
       
       explanations.push({
         step: 'normalization',
-        description: `Using provided RxCUI: ${rxcui}`,
+        description: `Using provided RxCUI: ${rxcui} (${drugName})`,
         details: { source: 'user_provided' },
       });
     } else if (request.drug.name) {

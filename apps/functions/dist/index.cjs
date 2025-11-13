@@ -49451,10 +49451,13 @@ async function calculateHandler(req, res) {
     let strength;
     if (request.drug.rxcui) {
       rxcui = request.drug.rxcui;
-      logger6.debug("Using provided RxCUI", { rxcui });
+      drugName = request.drug.name || "Unknown Drug";
+      logger6.debug("Using provided RxCUI", { rxcui, drugName });
+      dosageForm = void 0;
+      strength = void 0;
       explanations.push({
         step: "normalization",
-        description: `Using provided RxCUI: ${rxcui}`,
+        description: `Using provided RxCUI: ${rxcui} (${drugName})`,
         details: { source: "user_provided" }
       });
     } else if (request.drug.name) {
