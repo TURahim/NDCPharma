@@ -17,7 +17,7 @@ const RATE_LIMITS: Record<UserRole | 'anonymous', number> = {
   [UserRole.ADMIN]: Number.MAX_SAFE_INTEGER, // Unlimited
   [UserRole.PHARMACIST]: 200,
   [UserRole.PHARMACY_TECHNICIAN]: 100,
-  anonymous: 10, // Very limited for unauthenticated requests
+  anonymous: 100, // Increased for development/testing (was 10)
 };
 
 /**
