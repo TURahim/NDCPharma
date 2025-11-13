@@ -6,5 +6,6 @@
 export * from "./types";
 export * from "./quantity";
 export * from "./packageMatch";
+export * from "./unitConverter";
 export * from "./validation";
 
