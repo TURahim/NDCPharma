@@ -239,7 +239,7 @@ export function DrugAutocomplete({
           <div className="py-1">
             {results.map((result, index) => (
               <button
-                key={result.rxcui}
+                key={`${result.rxcui}-${index}`}
                 type="button"
                 onClick={() => handleSelect(result)}
                 className={cn(
