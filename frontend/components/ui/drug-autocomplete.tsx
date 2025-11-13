@@ -151,7 +151,17 @@ export function DrugAutocomplete({
   };
 
   // Highlight matching substring in result name
-  const highlightMatch = (text: string, query: string) => {
+  const highlightMatch = (text: string | undefined, query: string) => {
+    // Handle undefined/null text
+    if (!text) {
+      return <span className="text-gray-500">Unknown</span>;
+    }
+
+    // Handle empty query
+    if (!query) {
+      return <span>{text}</span>;
+    }
+
     const lowerText = text.toLowerCase();
     const lowerQuery = query.toLowerCase();
     const index = lowerText.indexOf(lowerQuery);
