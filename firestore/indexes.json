@@ -1,26 +1,6 @@
 {
   "indexes": [
     {
-      "collectionGroup": "calculationCache",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "key",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "calculationCache",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "expiresAt",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
       "collectionGroup": "calculationLogs",
       "queryScope": "COLLECTION",
       "fields": [
@@ -28,16 +8,6 @@
           "fieldPath": "userId",
           "order": "ASCENDING"
         },
-        {
-          "fieldPath": "timestamp",
-          "order": "DESCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "calculationLogs",
-      "queryScope": "COLLECTION",
-      "fields": [
         {
           "fieldPath": "timestamp",
           "order": "DESCENDING"
@@ -77,31 +47,11 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
-          "fieldPath": "email",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "users",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
           "fieldPath": "role",
           "order": "ASCENDING"
         },
         {
           "fieldPath": "isActive",
-          "order": "ASCENDING"
-        }
-      ]
-    },
-    {
-      "collectionGroup": "userActivity",
-      "queryScope": "COLLECTION",
-      "fields": [
-        {
-          "fieldPath": "userId",
           "order": "ASCENDING"
         }
       ]

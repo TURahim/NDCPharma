@@ -1,0 +1,13 @@
+{
+  "name": "@ndc/scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Admin scripts for NDC Calculator",
+  "scripts": {
+    "init-firestore": "node init-firestore-collections.js"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
+
