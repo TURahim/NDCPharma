@@ -2,8 +2,19 @@
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "./dist",
-    "sourceMap": true
+    "sourceMap": true,
+    "paths": {
+      "@api-contracts": ["../../packages/api-contracts/src"],
+      "@clients-rxnorm": ["../../packages/clients-rxnorm/src"],
+      "@clients-openfda": ["../../packages/clients-openfda/src"],
+      "@clients-openai": ["../../packages/clients-openai/src"],
+      "@domain-ndc": ["../../packages/domain-ndc/src"],
+      "@data-cache": ["../../packages/data-cache/src"],
+      "@core-config": ["../../packages/core-config/src"],
+      "@core-guardrails": ["../../packages/core-guardrails/src"],
+      "@utils": ["../../packages/utils/src"]
+    }
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "../../packages/**"]
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }

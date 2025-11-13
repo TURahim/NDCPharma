@@ -41184,7 +41184,6 @@ var FDAClient = class {
             packageSize: details.packageSize,
             dosageForm: details.dosageForm,
             marketingStatus: details.marketingStatus,
-            labelerName: details.labelerName,
             productNdc: details.productNdc,
             genericName: details.genericName,
             brandName: details.brandName,
