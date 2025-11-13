@@ -1,1 +1,61 @@
-node_modules
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Compiled files in src (should only be in dist)
+packages/*/src/**/*.js
+packages/*/src/**/*.map
+apps/*/src/**/*.js
+apps/*/src/**/*.map
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+firebase-debug.log
+firebase-debug.*.log
+
+# Firebase
+.firebase/
+.firebaserc.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.vitest/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# Frontend specific
+frontend/.next/
+frontend/out/
+frontend/.turbo/
+
+# Misc
+*.orig
