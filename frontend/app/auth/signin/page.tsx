@@ -5,11 +5,13 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Checkbox } from "@/components/ui/checkbox"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/lib/auth-context"
 
 const signInSchema = z.object({
   email: z.string().email("Please enter a valid email"),
@@ -22,6 +24,8 @@ type SignInForm = z.infer<typeof signInSchema>
 export default function SignInPage() {
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
+  const { signIn } = useAuth()
+  const router = useRouter()
 
   const form = useForm<SignInForm>({
     resolver: zodResolver(signInSchema),
@@ -35,20 +39,19 @@ export default function SignInPage() {
   async function onSubmit(data: SignInForm) {
     setIsLoading(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await signIn(data.email, data.password)
 
       toast({
         title: "Welcome back!",
         description: `Signed in as ${data.email}`,
       })
 
-      // Reset form
-      form.reset()
-    } catch (error) {
+      // Redirect to dashboard
+      router.push('/dashboard')
+    } catch (error: any) {
       toast({
         title: "Sign in failed",
-        description: "Please try again",
+        description: error.message || "Please check your credentials and try again",
         variant: "destructive",
       })
     } finally {
