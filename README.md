@@ -540,17 +540,19 @@ GitHub Actions workflow automatically:
 
 ## 📚 Documentation
 
-- [Backend Task List](backend-task-list%20(1).md) - Complete 6-PR development plan (PR-01 through PR-06 completed ✅)
+- [Backend Task List](backend-task-list%20(1).md) - Complete 6-PR development plan (PR-01 through PR-08 completed ✅)
 - [PR-03 Summary](PR-03-COMPLETION-SUMMARY.md) - FDA Integration details (93 tests)
 - [PR-04 Summary](PR-04-COMPLETION-SUMMARY.md) - Quantity Calculation + Unit Converter (170 tests + bonus)
 - [PR-06 Summary](PR-06-COMPLETION-SUMMARY.md) - Main Calculator Endpoint & Orchestration (10 integration tests)
 - [PR-07 Cache Integration Guide](PR-07-CACHE-INTEGRATION-GUIDE.md) - ⚠️ **Server integration required** (30 tests)
+- [PR-08 Summary](PR-08-COMPLETION-SUMMARY.md) - Authentication & Authorization (109 validation tests) ⭐ NEW
+- [Firestore Setup Guide](FIRESTORE-SETUP-GUIDE.md) - User creation & collection initialization
 - [Product Requirements](PRD_Foundation_Health_NDC_Packaging_Quantity_Calculator.md) - Full PRD
 - [OpenAPI Spec](packages/api-contracts/openapi.yaml) - REST API documentation
 
 ## 🎯 Implementation Progress
 
-### Completed Phases ✅ (306+ tests, 100% passing)
+### Completed Phases ✅ (455+ tests, 100% passing)
 
 ✅ **PR-01: Backend Infrastructure Setup**
 - Firebase Cloud Functions setup
@@ -572,7 +574,7 @@ GitHub Actions workflow automatically:
 - Active/inactive status & expiration warnings
 - 93 tests (14 service + 36 mapper + 43 validation) - 100% passing
 
-✅ **PR-04: Quantity Calculation Logic** ⭐ NEW
+✅ **PR-04: Quantity Calculation Logic**
 - Quantity calculation: `dose × frequency × daysSupply`
 - Structured SIG parsing with fractional dose support
 - **BONUS Unit Converter System**:
@@ -590,13 +592,44 @@ GitHub Actions workflow automatically:
 - Cost tracking and performance monitoring
 - 43 unit tests (100% passing)
 
-✅ **PR-06: Main Calculator Endpoint & Orchestration** ⭐
+✅ **PR-06: Main Calculator Endpoint & Orchestration**
 - Full 5-step orchestration pipeline
 - Input validation middleware (Zod schemas)
 - Error handling middleware with custom error classes
 - Comprehensive health checks (RxNorm, FDA, OpenAI, Firestore)
 - 12 integration tests for complete flow (100% passing)
 - esbuild bundling for Firebase Functions
+
+✅ **PR-07: Caching Layer & Performance Optimization**
+- Firestore-based cache service with TTL support
+- Cache-aside pattern for RxNorm and FDA clients
+- 30 comprehensive tests (100% passing)
+- TTLs: 24h for drugs, 1h for NDCs
+- Expected performance: 85% faster (cache hit)
+- ⚠️ **Server integration required** - See [PR-07-CACHE-INTEGRATION-GUIDE.md](PR-07-CACHE-INTEGRATION-GUIDE.md)
+
+✅ **PR-08: Authentication & Authorization** ⭐ NEW
+- **Firebase Authentication**: Email/password, JWT verification
+- **Role-Based Access Control (RBAC)**:
+  - 3 roles: admin (unlimited), pharmacist (200/hr), pharmacy_technician (100/hr)
+  - `verifyToken()`, `checkRole()`, `optionalAuth()`, `requireEmailVerification()`
+- **Enhanced Rate Limiting**:
+  - Per-user Firestore-based tracking (atomic transactions)
+  - Per-role limits with automatic hourly reset
+  - Anonymous IP-based limiting (10/hr, in-memory)
+  - Graceful degradation (fail-open on errors)
+- **Comprehensive Validation Tests**: 109 tests (100% passing)
+  - Drug name validation (17 tests): XSS, SQL injection, buffer overflow
+  - NDC validation (15 tests): format validation, normalization
+  - SIG validation (13 tests): HTML sanitization, length checks
+  - Days supply (11 tests): range validation, rounding
+  - Security tests (12 tests): XSS, SQL, buffer overflow, unicode
+- **Firestore Setup**:
+  - Security rules deployed (users, userActivity, calculationLogs, calculationCache)
+  - 6 composite indexes deployed
+  - User schemas (users, userActivity)
+  - Setup guide + automated initialization script
+- ⚠️ **Requires test user creation** - See [FIRESTORE-SETUP-GUIDE.md](FIRESTORE-SETUP-GUIDE.md)
 
 ### Known Issues
 
@@ -632,6 +665,6 @@ For questions or issues:
 
 ---
 
-**Last Updated:** PR-07 Completion (Caching Layer - Server Integration Pending)  
-**Current Status:** 346+ tests passing (100%) | PR-01 through PR-07 Complete ✅  
-**Next Milestone:** Integrate cache into server, then PR-08 (Authentication & Authorization)
+**Last Updated:** PR-08 Completion (Authentication & Authorization)  
+**Current Status:** 455+ tests passing (100%) | PR-01 through PR-08 Complete ✅  
+**Next Milestone:** Create test users, then PR-09 (Logging, Monitoring & Analytics)
