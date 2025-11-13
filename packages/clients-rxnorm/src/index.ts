@@ -7,6 +7,7 @@
 export {
   nameToRxCui,
   rxcuiToNdcs,
+  getNdcsForRxcui,
   type NormalizationOptions,
   type RxCuiResult,
   type NdcInfo,

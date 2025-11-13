@@ -4,7 +4,7 @@
  * Public API for AI-enhanced NDC recommendations
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.validateResponseStructure = exports.generateUserPrompt = exports.FEW_SHOT_EXAMPLES = exports.SYSTEM_PROMPT = exports.ndcRecommender = exports.NDCRecommender = exports.openaiService = exports.OpenAIService = void 0;
+exports.detectPHI = exports.sanitizeForAI = exports.validateResponseStructure = exports.generateUserPrompt = exports.FEW_SHOT_EXAMPLES = exports.SYSTEM_PROMPT = exports.ndcRecommender = exports.NDCRecommender = exports.openaiService = exports.OpenAIService = void 0;
 const openaiService_1 = require("./internal/openaiService");
 Object.defineProperty(exports, "OpenAIService", { enumerable: true, get: function () { return openaiService_1.OpenAIService; } });
 Object.defineProperty(exports, "openaiService", { enumerable: true, get: function () { return openaiService_1.openaiService; } });
@@ -17,3 +17,7 @@ Object.defineProperty(exports, "SYSTEM_PROMPT", { enumerable: true, get: functio
 Object.defineProperty(exports, "FEW_SHOT_EXAMPLES", { enumerable: true, get: function () { return prompts_1.FEW_SHOT_EXAMPLES; } });
 Object.defineProperty(exports, "generateUserPrompt", { enumerable: true, get: function () { return prompts_1.generateUserPrompt; } });
 Object.defineProperty(exports, "validateResponseStructure", { enumerable: true, get: function () { return prompts_1.validateResponseStructure; } });
+// Export PHI sanitization utilities
+var phiSanitizer_1 = require("./internal/phiSanitizer");
+Object.defineProperty(exports, "sanitizeForAI", { enumerable: true, get: function () { return phiSanitizer_1.sanitizeForAI; } });
+Object.defineProperty(exports, "detectPHI", { enumerable: true, get: function () { return phiSanitizer_1.detectPHI; } });

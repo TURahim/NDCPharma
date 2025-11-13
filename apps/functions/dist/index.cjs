@@ -39425,6 +39425,23 @@ var RxNormService = class {
     }
   }
   /**
+   * Get NDC codes for an RxCUI
+   * GET /rxcui/{rxcui}/ndcs.json
+   */
+  async getNDCs(rxcui) {
+    const startTime = Date.now();
+    try {
+      const response = await this.executeWithRetry(
+        `/rxcui/${rxcui}/ndcs.json`
+      );
+      const executionTime = Date.now() - startTime;
+      this.logger.logExternalAPICall("RxNorm", `/rxcui/${rxcui}/ndcs`, "GET", 200, executionTime);
+      return response;
+    } catch (error) {
+      throw this.handleError(error, "getNDCs");
+    }
+  }
+  /**
    * Execute API request with retry logic
    */
   async executeWithRetry(endpoint, params) {
@@ -39867,6 +39884,21 @@ async function nameToRxCui(name, opts) {
       confidence: 1
       // Basic lookup has high confidence if found
     };
+  }
+}
+async function getNdcsForRxcui(rxcui, opts) {
+  try {
+    const response = await rxnormService.getNDCs(rxcui);
+    if (!response.ndcGroup?.ndcList) {
+      return [];
+    }
+    const ndcs = response.ndcGroup.ndcList.ndc || [];
+    if (opts?.maxResults) {
+      return ndcs.slice(0, opts.maxResults);
+    }
+    return ndcs;
+  } catch (error) {
+    return [];
   }
 }
 
@@ -40340,6 +40372,200 @@ function sortByPackageSize(packages) {
   return [...packages].sort((a2, b2) => a2.packageSize.quantity - b2.packageSize.quantity);
 }
 
+// ../../packages/domain-ndc/src/quantity.ts
+function parseStrength(strengthStr) {
+  if (!strengthStr) return null;
+  const concentrationMatch = strengthStr.match(/(\d+\.?\d*)\s*(\w+)\s*\/\s*(\d+\.?\d*)\s*(\w+)/i);
+  if (concentrationMatch) {
+    const [, value, unit, perValue, perUnit] = concentrationMatch;
+    return {
+      value: parseFloat(value) / parseFloat(perValue),
+      unit: unit.toUpperCase(),
+      perUnit: perUnit.toUpperCase()
+    };
+  }
+  const simpleMatch = strengthStr.match(/(\d+\.?\d*)\s*(\w+)/i);
+  if (simpleMatch) {
+    const [, value, unit] = simpleMatch;
+    return {
+      value: parseFloat(value),
+      unit: unit.toUpperCase()
+    };
+  }
+  return null;
+}
+function normalizeUnit2(unit) {
+  const normalized = unit.toLowerCase().trim();
+  const unitMap = {
+    "tab": "tablet",
+    "tabs": "tablet",
+    "tablet": "tablet",
+    "tablets": "tablet",
+    "cap": "capsule",
+    "caps": "capsule",
+    "capsule": "capsule",
+    "capsules": "capsule",
+    "ml": "ml",
+    "milliliter": "ml",
+    "milliliters": "ml",
+    "mg": "mg",
+    "milligram": "mg",
+    "milligrams": "mg"
+  };
+  return unitMap[normalized] || normalized;
+}
+function computeTotalQuantity(sig, drugStrength, daysSupply) {
+  const warnings = [];
+  const sigUnit = normalizeUnit2(sig.unit);
+  const strength = parseStrength(drugStrength.strength || "");
+  if (sigUnit === "tablet" || sigUnit === "capsule") {
+    const totalQuantity2 = sig.dose * sig.frequency * daysSupply;
+    return {
+      totalQuantity: totalQuantity2,
+      warnings,
+      details: {
+        method: "direct",
+        calculation: `${sig.dose} \xD7 ${sig.frequency} \xD7 ${daysSupply} = ${totalQuantity2} ${sig.unit}`
+      }
+    };
+  }
+  if (sigUnit === "ml") {
+    const totalQuantity2 = sig.dose * sig.frequency * daysSupply;
+    if (!strength) {
+      warnings.push("Drug strength not available. Calculated volume only.");
+    }
+    return {
+      totalQuantity: totalQuantity2,
+      warnings,
+      details: {
+        method: "direct",
+        calculation: `${sig.dose} mL \xD7 ${sig.frequency} \xD7 ${daysSupply} = ${totalQuantity2} mL`
+      }
+    };
+  }
+  if (sigUnit === "mg" && strength) {
+    if (strength.unit === "MG") {
+      const tabletsPerDose = sig.dose / strength.value;
+      const totalTablets = tabletsPerDose * sig.frequency * daysSupply;
+      if (tabletsPerDose !== Math.floor(tabletsPerDose)) {
+        warnings.push(
+          `Dose (${sig.dose} mg) requires ${tabletsPerDose.toFixed(2)} tablets per dose. This may not be practical. Verify prescription.`
+        );
+      }
+      return {
+        totalQuantity: Math.ceil(totalTablets),
+        warnings,
+        details: {
+          method: "strength_conversion",
+          calculation: `${sig.dose} mg \xF7 ${strength.value} mg/tablet \xD7 ${sig.frequency} \xD7 ${daysSupply} = ${Math.ceil(totalTablets)} tablets`
+        }
+      };
+    }
+    if (strength.perUnit === "ML") {
+      const mlPerDose = sig.dose / strength.value;
+      const totalML = mlPerDose * sig.frequency * daysSupply;
+      return {
+        totalQuantity: totalML,
+        warnings,
+        details: {
+          method: "concentration_conversion",
+          calculation: `${sig.dose} mg \xF7 ${strength.value} mg/mL \xD7 ${sig.frequency} \xD7 ${daysSupply} = ${totalML} mL`
+        }
+      };
+    }
+  }
+  const totalQuantity = sig.dose * sig.frequency * daysSupply;
+  warnings.push(
+    `Unit mismatch: prescription in "${sig.unit}" but drug strength is "${drugStrength.strength || "unknown"}". Using direct calculation. Verify quantity with prescriber.`
+  );
+  return {
+    totalQuantity,
+    warnings,
+    details: {
+      method: "direct",
+      calculation: `${sig.dose} \xD7 ${sig.frequency} \xD7 ${daysSupply} = ${totalQuantity} (with unit mismatch warning)`
+    }
+  };
+}
+
+// ../../packages/domain-ndc/src/packageMatch.ts
+function chooseBestPackage(packages, requiredQuantity) {
+  const warnings = [];
+  if (packages.length === 0) {
+    throw new Error("No packages available for selection");
+  }
+  const sortedPackages = [...packages].sort(
+    (a2, b2) => a2.packageSize.quantity - b2.packageSize.quantity
+  );
+  const exactMatch = sortedPackages.find(
+    (pkg) => pkg.packageSize.quantity === requiredQuantity
+  );
+  if (exactMatch) {
+    return {
+      selected: exactMatch,
+      overfillPercentage: 0,
+      underfillPercentage: 0,
+      warnings: [],
+      explanation: `Exact match: ${exactMatch.packageSize.quantity} ${exactMatch.packageSize.unit} package meets requirement perfectly`
+    };
+  }
+  const adequatePackage = sortedPackages.find(
+    (pkg) => pkg.packageSize.quantity >= requiredQuantity
+  );
+  if (adequatePackage) {
+    const overfill = adequatePackage.packageSize.quantity - requiredQuantity;
+    const overfillPct = overfill / requiredQuantity * 100;
+    if (overfillPct > 20) {
+      warnings.push(
+        `Significant overfill: ${overfillPct.toFixed(1)}% (${overfill} extra ${adequatePackage.packageSize.unit}). Patient will have leftover medication. Consider discussing with prescriber.`
+      );
+    }
+    return {
+      selected: adequatePackage,
+      overfillPercentage: overfillPct,
+      underfillPercentage: 0,
+      warnings,
+      explanation: `Selected ${adequatePackage.packageSize.quantity} ${adequatePackage.packageSize.unit} package (smallest available that meets ${requiredQuantity} ${adequatePackage.packageSize.unit} requirement)`
+    };
+  }
+  const largestPackage = sortedPackages[sortedPackages.length - 1];
+  const underfill = requiredQuantity - largestPackage.packageSize.quantity;
+  const underfillPct = underfill / requiredQuantity * 100;
+  warnings.push(
+    `No package meets required quantity. Largest available is ${largestPackage.packageSize.quantity} ${largestPackage.packageSize.unit}. Underfill: ${underfillPct.toFixed(1)}% (${underfill} ${largestPackage.packageSize.unit} short). Patient will need early refill.`
+  );
+  return {
+    selected: largestPackage,
+    overfillPercentage: 0,
+    underfillPercentage: underfillPct,
+    warnings,
+    explanation: `Selected largest available package: ${largestPackage.packageSize.quantity} ${largestPackage.packageSize.unit} (underfills requirement of ${requiredQuantity} ${largestPackage.packageSize.unit})`
+  };
+}
+function calculateFillPrecision(packageQuantity, requiredQuantity) {
+  if (packageQuantity === requiredQuantity) {
+    return {
+      overfillPercentage: 0,
+      underfillPercentage: 0,
+      fillPrecision: "exact"
+    };
+  }
+  if (packageQuantity > requiredQuantity) {
+    const overfill = (packageQuantity - requiredQuantity) / requiredQuantity * 100;
+    return {
+      overfillPercentage: overfill,
+      underfillPercentage: 0,
+      fillPrecision: "overfill"
+    };
+  }
+  const underfill = (requiredQuantity - packageQuantity) / requiredQuantity * 100;
+  return {
+    overfillPercentage: 0,
+    underfillPercentage: underfill,
+    fillPrecision: "underfill"
+  };
+}
+
 // ../../packages/domain-ndc/src/validation.ts
 var NDC_FORMATS = {
   /** 11-digit format with dashes: XXXXX-XXXX-XX */
@@ -40479,6 +40705,55 @@ function calculateDaysUntilDate(dateString) {
   } catch {
     return null;
   }
+}
+
+// ../../packages/domain-ndc/src/dosageForm.ts
+var DOSAGE_FORM_MAP = {
+  // Solid forms
+  "tablet": "solid",
+  "capsule": "solid",
+  "caplet": "solid",
+  "chewable": "solid",
+  "lozenge": "solid",
+  "pill": "solid",
+  "granule": "solid",
+  "powder": "solid",
+  // Liquid forms
+  "solution": "liquid",
+  "suspension": "liquid",
+  "syrup": "liquid",
+  "elixir": "liquid",
+  "emulsion": "liquid",
+  "drops": "liquid",
+  "liquid": "liquid",
+  // Other forms
+  "inhaler": "other",
+  "spray": "other",
+  "aerosol": "other",
+  "injection": "other",
+  "injectable": "other",
+  "patch": "other",
+  "cream": "other",
+  "ointment": "other",
+  "gel": "other",
+  "foam": "other"
+};
+function normalizeDosageForm2(form) {
+  if (!form) return "other";
+  const normalized = form.toLowerCase().trim();
+  for (const [key, value] of Object.entries(DOSAGE_FORM_MAP)) {
+    if (normalized.includes(key)) {
+      return value;
+    }
+  }
+  return "other";
+}
+function filterByDosageFormFamily(packages, targetForm) {
+  const targetFamily = normalizeDosageForm2(targetForm);
+  return packages.filter((pkg) => {
+    const pkgFamily = normalizeDosageForm2(pkg.dosageForm);
+    return pkgFamily === targetFamily;
+  });
 }
 
 // ../../packages/clients-openfda/src/cachedClient.ts
@@ -40880,6 +41155,55 @@ var FDAClient = class {
       sizes.add(pkg.packageSize.quantity);
     }
     return Array.from(sizes).sort((a2, b2) => a2 - b2);
+  }
+  /**
+   * Get NDC packages by batch list of NDC codes
+   * Returns detailed package information for each NDC
+   * 
+   * @param ndcList Array of NDC codes
+   * @param options Search options (activeOnly, dosageForm)
+   * @returns Array of NDC packages
+   * 
+   * @example
+   * ```typescript
+   * const ndcs = ['00071-0156-23', '00071-0156-34'];
+   * const packages = await fdaClient.getPackagesByNdcList(ndcs, { activeOnly: true });
+   * ```
+   */
+  async getPackagesByNdcList(ndcList, options = {}) {
+    if (!ndcList || ndcList.length === 0) {
+      return [];
+    }
+    const allPackages = [];
+    for (const ndc of ndcList) {
+      try {
+        const details = await this.getNDCDetails(ndc);
+        if (details) {
+          const pkg = {
+            ndc: details.ndc,
+            packageSize: details.packageSize,
+            dosageForm: details.dosageForm,
+            marketingStatus: details.marketingStatus,
+            labelerName: details.labelerName,
+            productNdc: details.productNdc,
+            genericName: details.genericName,
+            brandName: details.brandName,
+            activeIngredients: details.activeIngredients
+          };
+          allPackages.push(pkg);
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    let packages = allPackages;
+    if (options.activeOnly) {
+      packages = filterActivePackages(packages);
+    }
+    if (options.dosageForm) {
+      packages = filterByDosageForm(packages, options.dosageForm);
+    }
+    return sortByPackageSize(packages);
   }
 };
 var fdaClient = new FDAClient();
@@ -49432,6 +49756,43 @@ var NDCRecommender = class {
 };
 var ndcRecommender = new NDCRecommender();
 
+// ../../packages/clients-openai/src/internal/phiSanitizer.ts
+function sanitizeForAI(data) {
+  const sanitized = {};
+  const allowedFields = /* @__PURE__ */ new Set([
+    "drug",
+    "genericName",
+    "brandName",
+    "rxcui",
+    "dosageForm",
+    "strength",
+    "prescription",
+    "sig",
+    "daysSupply",
+    "quantityNeeded",
+    "availablePackages",
+    "ndc",
+    "packageSize",
+    "unit",
+    "labeler",
+    "isActive"
+  ]);
+  for (const [key, value] of Object.entries(data)) {
+    if (allowedFields.has(key)) {
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        sanitized[key] = sanitizeForAI(value);
+      } else if (Array.isArray(value)) {
+        sanitized[key] = value.map(
+          (item) => typeof item === "object" ? sanitizeForAI(item) : item
+        );
+      } else {
+        sanitized[key] = value;
+      }
+    }
+  }
+  return sanitized;
+}
+
 // src/api/v1/calculate.ts
 var logger6 = createLogger({ service: "CalculateEndpoint" });
 async function calculateHandler(req, res) {
@@ -49493,18 +49854,50 @@ async function calculateHandler(req, res) {
     } else {
       throw new Error("Either drug name or RxCUI must be provided");
     }
-    logger6.debug("Fetching NDC packages from FDA", { rxcui });
-    const allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
-    if (!allPackages || allPackages.length === 0) {
-      throw new Error(`No NDC packages found for RxCUI: ${rxcui}`);
+    logger6.debug("Fetching NDC list from RxNorm", { rxcui });
+    const ndcList = await getNdcsForRxcui(rxcui);
+    if (!ndcList || ndcList.length === 0) {
+      logger6.warn("No NDCs found in RxNorm, will try FDA by RxCUI as fallback", { rxcui });
+    } else {
+      logger6.info("Retrieved NDC list from RxNorm", {
+        rxcui,
+        ndcCount: ndcList.length
+      });
+      explanations.push({
+        step: "fetch_ndcs_rxnorm",
+        description: `Retrieved ${ndcList.length} NDC codes from RxNorm`,
+        details: {
+          rxcui,
+          source: "RxNorm"
+        }
+      });
     }
-    logger6.info("Retrieved NDC packages from FDA", {
+    logger6.debug("Fetching package details from FDA", { ndcCount: ndcList.length });
+    let allPackages;
+    if (ndcList.length > 0) {
+      allPackages = await fdaClient.getPackagesByNdcList(ndcList, {});
+    } else {
+      logger6.info("Using FDA RxCUI search as fallback", { rxcui });
+      allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
+      explanations.push({
+        step: "fetch_ndcs_fda_fallback",
+        description: "Using FDA RxCUI search as fallback (RxNorm had no NDCs)",
+        details: {
+          rxcui,
+          source: "openFDA"
+        }
+      });
+    }
+    if (!allPackages || allPackages.length === 0) {
+      throw new Error(`No NDC packages found for drug (RxCUI: ${rxcui})`);
+    }
+    logger6.info("Retrieved package details from FDA", {
       rxcui,
       totalPackages: allPackages.length
     });
     explanations.push({
-      step: "fetch_ndcs",
-      description: `Retrieved ${allPackages.length} NDC packages from FDA database`,
+      step: "enrich_packages_fda",
+      description: `Enriched ${allPackages.length} packages with FDA data (dosage form, marketing status, labeler)`,
       details: {
         rxcui,
         source: "openFDA"
@@ -49530,115 +49923,106 @@ async function calculateHandler(req, res) {
       throw new Error("No active NDC packages available for this drug");
     }
     let filteredPackages = activePackages;
-    if (dosageForm && request.sig.unit) {
-      const normalizedUnit = request.sig.unit.toUpperCase();
-      filteredPackages = activePackages.filter(
-        (pkg) => pkg.dosageForm.toUpperCase() === normalizedUnit || pkg.packageSize.unit.toUpperCase() === normalizedUnit
-      );
+    if (request.sig.unit) {
+      filteredPackages = filterByDosageFormFamily(activePackages, request.sig.unit);
       if (filteredPackages.length > 0) {
         explanations.push({
           step: "filter_dosage_form",
-          description: `Filtered to ${filteredPackages.length} packages matching dosage form: ${normalizedUnit}`
+          description: `Filtered to ${filteredPackages.length} packages matching dosage form family for "${request.sig.unit}"`,
+          details: {
+            originalCount: activePackages.length,
+            filteredCount: filteredPackages.length
+          }
         });
       } else {
         filteredPackages = activePackages;
         warnings.push(
-          `No packages found matching dosage form "${request.sig.unit}". Showing all available dosage forms.`
+          `No packages found matching dosage form "${request.sig.unit}". Showing all available dosage forms. Verify prescription carefully.`
         );
+        explanations.push({
+          step: "filter_dosage_form",
+          description: "No dosage form match found - showing all active packages",
+          details: {
+            requestedForm: request.sig.unit,
+            availableForms: Array.from(new Set(activePackages.map((p2) => p2.dosageForm)))
+          }
+        });
       }
     }
     const sortedPackages = [...filteredPackages].sort(
       (a2, b2) => (a2.packageSize?.quantity || 0) - (b2.packageSize?.quantity || 0)
     );
-    const totalQuantity = request.sig.dose * request.sig.frequency * request.daysSupply;
+    const quantityResult = computeTotalQuantity(
+      request.sig,
+      { strength, dosageForm },
+      request.daysSupply
+    );
+    const totalQuantity = quantityResult.totalQuantity;
+    warnings.push(...quantityResult.warnings);
     logger6.info("Calculated total quantity", {
       dose: request.sig.dose,
       frequency: request.sig.frequency,
       daysSupply: request.daysSupply,
-      totalQuantity
+      totalQuantity,
+      method: quantityResult.details?.method
     });
     explanations.push({
-      step: "calculation",
-      description: `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
+      step: "quantity_calculation",
+      description: quantityResult.details?.calculation || `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
       details: {
-        formula: `${request.sig.dose} ${request.sig.unit} \xD7 ${request.sig.frequency} times/day \xD7 ${request.daysSupply} days`,
+        method: quantityResult.details?.method || "direct",
+        dose: request.sig.dose,
+        frequency: request.sig.frequency,
+        daysSupply: request.daysSupply,
         result: totalQuantity
       }
     });
-    let recommendedPackages = [];
-    let overfillPercentage = 0;
-    let underfillPercentage = 0;
-    let remainingQuantity = totalQuantity;
-    const selectedPackages = [];
-    const exactMatch = sortedPackages.find(
-      (pkg) => pkg.packageSize.quantity === totalQuantity
-    );
-    if (exactMatch) {
-      selectedPackages.push(exactMatch);
-      remainingQuantity = 0;
-      explanations.push({
-        step: "package_selection",
-        description: `Found exact match: ${exactMatch.packageSize.quantity} ${exactMatch.packageSize.unit} package`,
-        details: { ndc: exactMatch.ndc }
-      });
-    } else {
-      const sortedDesc = [...sortedPackages].sort(
-        (a2, b2) => b2.packageSize.quantity - a2.packageSize.quantity
-      );
-      for (const pkg of sortedDesc) {
-        if (remainingQuantity <= 0) break;
-        if (pkg.packageSize.quantity <= remainingQuantity * 1.2) {
-          selectedPackages.push(pkg);
-          remainingQuantity -= pkg.packageSize.quantity;
-        }
-      }
-      if (remainingQuantity > 0) {
-        const smallestPackage = sortedPackages[0];
-        if (smallestPackage) {
-          selectedPackages.push(smallestPackage);
-          remainingQuantity -= smallestPackage.packageSize.quantity;
-        }
-      }
-      explanations.push({
-        step: "package_selection",
-        description: `Selected ${selectedPackages.length} package(s) to fulfill prescription`,
-        details: {
-          packages: selectedPackages.map((p2) => ({
-            ndc: p2.ndc,
-            size: p2.packageSize.quantity
-          }))
-        }
-      });
-    }
-    const totalDispensed = selectedPackages.reduce(
-      (sum, pkg) => sum + pkg.packageSize.quantity,
-      0
-    );
-    if (totalDispensed > totalQuantity) {
-      overfillPercentage = (totalDispensed - totalQuantity) / totalQuantity * 100;
-    } else if (totalDispensed < totalQuantity) {
-      underfillPercentage = (totalQuantity - totalDispensed) / totalQuantity * 100;
-    }
-    if (overfillPercentage > 10) {
-      warnings.push(
-        `Overfill of ${overfillPercentage.toFixed(1)}% (dispensing ${totalDispensed} vs ${totalQuantity} needed)`
-      );
-    }
-    if (underfillPercentage > 5) {
-      warnings.push(
-        `Underfill of ${underfillPercentage.toFixed(1)}% (dispensing ${totalDispensed} vs ${totalQuantity} needed)`
-      );
-    }
-    recommendedPackages = selectedPackages.map((pkg) => ({
+    const packageCandidates = sortedPackages.map((pkg) => ({
       ndc: pkg.ndc,
-      packageSize: pkg.packageSize.quantity,
-      unit: pkg.packageSize.unit,
+      packageSize: {
+        quantity: pkg.packageSize.quantity,
+        unit: pkg.packageSize.unit
+      },
       dosageForm: pkg.dosageForm,
       marketingStatus: String(pkg.marketingStatus),
       isActive: pkg.marketingStatus === "ACTIVE",
-      quantityNeeded: pkg.packageSize.quantity,
-      fillPrecision: overfillPercentage === 0 && underfillPercentage === 0 ? "exact" : overfillPercentage > 0 ? "overfill" : "underfill"
+      labelerName: pkg.labelerName
     }));
+    const selection = chooseBestPackage(packageCandidates, totalQuantity);
+    warnings.push(...selection.warnings);
+    const overfillPercentage = selection.overfillPercentage;
+    const underfillPercentage = selection.underfillPercentage;
+    logger6.info("Selected package", {
+      ndc: selection.selected.ndc,
+      packageSize: selection.selected.packageSize.quantity,
+      overfillPercentage,
+      underfillPercentage
+    });
+    explanations.push({
+      step: "package_selection",
+      description: selection.explanation,
+      details: {
+        ndc: selection.selected.ndc,
+        packageSize: selection.selected.packageSize.quantity,
+        requiredQuantity: totalQuantity,
+        overfill: overfillPercentage,
+        underfill: underfillPercentage
+      }
+    });
+    const fillMetrics = calculateFillPrecision(
+      selection.selected.packageSize.quantity,
+      totalQuantity
+    );
+    const recommendedPackages = [{
+      ndc: selection.selected.ndc,
+      packageSize: selection.selected.packageSize.quantity,
+      unit: selection.selected.packageSize.unit,
+      dosageForm: selection.selected.dosageForm,
+      marketingStatus: selection.selected.marketingStatus,
+      isActive: selection.selected.isActive,
+      quantityNeeded: selection.selected.packageSize.quantity,
+      fillPrecision: fillMetrics.fillPrecision
+    }];
     let aiInsights;
     let metadata = {
       usedAI: false,
@@ -49649,7 +50033,7 @@ async function calculateHandler(req, res) {
       logger6.info("AI enhancement enabled, calling OpenAI recommender", { rxcui });
       try {
         const aiStartTime = Date.now();
-        const aiRequest = {
+        const rawAiRequest = {
           drug: {
             genericName: drugName || "Unknown",
             rxcui,
@@ -49661,14 +50045,15 @@ async function calculateHandler(req, res) {
             daysSupply: request.daysSupply,
             quantityNeeded: totalQuantity
           },
-          availablePackages: activePackages.map((pkg) => ({
+          availablePackages: packageCandidates.map((pkg) => ({
             ndc: pkg.ndc,
             packageSize: pkg.packageSize.quantity,
             unit: pkg.packageSize.unit,
             labeler: pkg.labelerName || "Unknown",
-            isActive: pkg.marketingStatus === "ACTIVE"
+            isActive: pkg.isActive
           }))
         };
+        const aiRequest = sanitizeForAI(rawAiRequest);
         const aiResult = await ndcRecommender.getEnhancedRecommendation(aiRequest);
         const aiExecutionTime = Date.now() - aiStartTime;
         logger6.info("AI recommendation received", {
@@ -49691,24 +50076,33 @@ async function calculateHandler(req, res) {
           // Will be set at the end
           aiCost: aiResult.metadata.aiCost
         };
-        if (aiResult.primary) {
-          const primaryNdc = aiResult.primary.ndc;
-          const primaryIdx = recommendedPackages.findIndex((pkg) => pkg.ndc === primaryNdc);
-          if (primaryIdx !== -1) {
-            recommendedPackages[primaryIdx] = {
-              ...recommendedPackages[primaryIdx],
+        if (aiResult.primary && recommendedPackages[0]) {
+          if (aiResult.primary.ndc === recommendedPackages[0].ndc) {
+            recommendedPackages[0] = {
+              ...recommendedPackages[0],
               reasoning: aiResult.primary.reasoning,
               confidenceScore: aiResult.primary.confidenceScore,
-              source: aiResult.primary.source
+              source: "ai"
+            };
+          } else {
+            logger6.info("AI suggested different package than algorithm", {
+              algorithmNdc: recommendedPackages[0].ndc,
+              aiNdc: aiResult.primary.ndc
+            });
+            recommendedPackages[0] = {
+              ...recommendedPackages[0],
+              reasoning: `Algorithm-based selection. AI suggested ${aiResult.primary.ndc} but keeping algorithmic choice for consistency.`,
+              source: "algorithm"
             };
           }
         }
         explanations.push({
           step: "ai_enhancement",
-          description: aiResult.metadata.usedAI ? "AI-enhanced recommendation with reasoning" : "Algorithm-based recommendation (AI unavailable)",
+          description: aiResult.metadata.usedAI ? "AI-enhanced recommendation with reasoning (annotation only)" : "Algorithm-based recommendation (AI unavailable)",
           details: {
             usedAI: aiResult.metadata.usedAI,
-            executionTime: aiExecutionTime
+            executionTime: aiExecutionTime,
+            note: "AI provides annotations only; package selection is algorithm-based"
           }
         });
       } catch (aiError) {

@@ -8,4 +8,5 @@ export * from "./quantity";
 export * from "./packageMatch";
 export * from "./unitConverter";
 export * from "./validation";
+export * from "./dosageForm";
 

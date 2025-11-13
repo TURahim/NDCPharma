@@ -94,7 +94,16 @@ export interface FetchOptions {
  */
 export declare function nameToRxCui(name: string, opts?: NormalizationOptions): Promise<RxCuiResult>;
 /**
- * Get NDCs for a given RxCUI
+ * Get NDC codes for a given RxCUI
+ * Returns actual NDC codes from RxNorm API
+ *
+ * @param rxcui - RxNorm Concept Unique Identifier
+ * @param opts - Fetch options
+ * @returns Array of NDC codes
+ */
+export declare function getNdcsForRxcui(rxcui: string, opts?: FetchOptions): Promise<string[]>;
+/**
+ * Get NDCs for a given RxCUI (legacy method for backward compatibility)
  *
  * Note: RxNorm provides the primary NDC mapping.
  * Use openFDA enrichNdcs() separately to add marketing status and packaging details.
@@ -102,5 +111,6 @@ export declare function nameToRxCui(name: string, opts?: NormalizationOptions): 
  * @param rxcui - RxNorm Concept Unique Identifier
  * @param opts - Fetch options
  * @returns Array of NDC information
+ * @deprecated Use getNdcsForRxcui() for simpler NDC list retrieval
  */
 export declare function rxcuiToNdcs(rxcui: string, opts?: FetchOptions): Promise<NdcInfo[]>;

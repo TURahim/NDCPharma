@@ -1,71 +1,188 @@
 /**
- * Quantity Calculation Logic
- * Pure functions for calculating required medication quantities
- * MVP: Solids only (tablets, capsules)
+ * Quantity Calculation Utilities
+ * Handles total quantity computation with unit conversions
  */
 
-/**
- * Calculate total quantity needed based on prescription
- * Formula: dose × frequency × days' supply
- * 
- * MVP: Structured input only, defer free-text SIG parsing
- * 
- * @param prescription - Prescription details
- * @returns Total quantity needed
- */
-export function calculateTotalQuantity(prescription: {
-  /**
-   * Dose per administration (e.g., 2 tablets)
-   */
-  dosePerAdministration: number;
-  
-  /**
-   * Frequency per day (e.g., 2 for twice daily)
-   */
-  frequencyPerDay: number;
-  
-  /**
-   * Days' supply
-   */
-  daysSupply: number;
-}): number {
-  const { dosePerAdministration, frequencyPerDay, daysSupply } = prescription;
-  
-  // Validate inputs
-  if (dosePerAdministration <= 0 || frequencyPerDay <= 0 || daysSupply <= 0) {
-    throw new Error("All prescription values must be positive numbers");
-  }
-  
-  if (daysSupply > 365) {
-    throw new Error("Days' supply cannot exceed 365 days");
-  }
-  
-  // Calculate total quantity
-  const totalQuantity = dosePerAdministration * frequencyPerDay * daysSupply;
-  
-  // Round up to nearest whole unit for solids
-  return Math.ceil(totalQuantity);
-}
-
-/**
- * Parse structured SIG input (MVP scope)
- * 
- * @param sig - Structured SIG object
- * @returns Parsed dose and frequency
- */
-export function parseStructuredSIG(sig: {
+export interface SIGInput {
   dose: number;
   frequency: number;
   unit: string;
-}): {
-  dosePerAdministration: number;
-  frequencyPerDay: number;
-  unit: string;
-} {
-  return {
-    dosePerAdministration: sig.dose,
-    frequencyPerDay: sig.frequency,
-    unit: sig.unit.toUpperCase(),
+}
+
+export interface DrugStrength {
+  strength?: string;
+  dosageForm?: string;
+}
+
+export interface QuantityResult {
+  totalQuantity: number;
+  warnings: string[];
+  details?: {
+    method: 'direct' | 'strength_conversion' | 'concentration_conversion';
+    calculation: string;
   };
 }
 
+/**
+ * Parse strength string to extract numeric value and unit
+ * Examples: "500 MG", "10 MG/ML", "250 MG/5ML"
+ */
+function parseStrength(strengthStr: string): { value: number; unit: string; perUnit?: string } | null {
+  if (!strengthStr) return null;
+  
+  // Handle "X MG/Y ML" format (concentration)
+  const concentrationMatch = strengthStr.match(/(\d+\.?\d*)\s*(\w+)\s*\/\s*(\d+\.?\d*)\s*(\w+)/i);
+  if (concentrationMatch) {
+    const [, value, unit, perValue, perUnit] = concentrationMatch;
+    return {
+      value: parseFloat(value) / parseFloat(perValue),
+      unit: unit.toUpperCase(),
+      perUnit: perUnit.toUpperCase(),
+    };
+  }
+  
+  // Handle "X MG" format (simple strength)
+  const simpleMatch = strengthStr.match(/(\d+\.?\d*)\s*(\w+)/i);
+  if (simpleMatch) {
+    const [, value, unit] = simpleMatch;
+    return {
+      value: parseFloat(value),
+      unit: unit.toUpperCase(),
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * Normalize unit strings for comparison
+ */
+function normalizeUnit(unit: string): string {
+  const normalized = unit.toLowerCase().trim();
+  
+  // Handle common variations
+  const unitMap: Record<string, string> = {
+    'tab': 'tablet',
+    'tabs': 'tablet',
+    'tablet': 'tablet',
+    'tablets': 'tablet',
+    'cap': 'capsule',
+    'caps': 'capsule',
+    'capsule': 'capsule',
+    'capsules': 'capsule',
+    'ml': 'ml',
+    'milliliter': 'ml',
+    'milliliters': 'ml',
+    'mg': 'mg',
+    'milligram': 'mg',
+    'milligrams': 'mg',
+  };
+  
+  return unitMap[normalized] || normalized;
+}
+
+/**
+ * Compute total quantity needed for prescription
+ * @param sig - Prescription SIG (dose, frequency, unit)
+ * @param drugStrength - Drug strength information
+ * @param daysSupply - Number of days supply
+ * @returns Quantity result with warnings
+ */
+export function computeTotalQuantity(
+  sig: SIGInput,
+  drugStrength: DrugStrength,
+  daysSupply: number
+): QuantityResult {
+  const warnings: string[] = [];
+  
+  const sigUnit = normalizeUnit(sig.unit);
+  const strength = parseStrength(drugStrength.strength || '');
+  
+  // Case 1: Direct calculation (tablet/capsule units)
+  if (sigUnit === 'tablet' || sigUnit === 'capsule') {
+    const totalQuantity = sig.dose * sig.frequency * daysSupply;
+    
+    return {
+      totalQuantity,
+      warnings,
+      details: {
+        method: 'direct',
+        calculation: `${sig.dose} × ${sig.frequency} × ${daysSupply} = ${totalQuantity} ${sig.unit}`,
+      },
+    };
+  }
+  
+  // Case 2: Liquid (mL)
+  if (sigUnit === 'ml') {
+    const totalQuantity = sig.dose * sig.frequency * daysSupply;
+    
+    if (!strength) {
+      warnings.push('Drug strength not available. Calculated volume only.');
+    }
+    
+    return {
+      totalQuantity,
+      warnings,
+      details: {
+        method: 'direct',
+        calculation: `${sig.dose} mL × ${sig.frequency} × ${daysSupply} = ${totalQuantity} mL`,
+      },
+    };
+  }
+  
+  // Case 3: mg dosing with tablet/capsule form
+  if (sigUnit === 'mg' && strength) {
+    if (strength.unit === 'MG') {
+      // Calculate tablets needed
+      const tabletsPerDose = sig.dose / strength.value;
+      const totalTablets = tabletsPerDose * sig.frequency * daysSupply;
+      
+      if (tabletsPerDose !== Math.floor(tabletsPerDose)) {
+        warnings.push(
+          `Dose (${sig.dose} mg) requires ${tabletsPerDose.toFixed(2)} tablets per dose. ` +
+          `This may not be practical. Verify prescription.`
+        );
+      }
+      
+      return {
+        totalQuantity: Math.ceil(totalTablets),
+        warnings,
+        details: {
+          method: 'strength_conversion',
+          calculation: `${sig.dose} mg ÷ ${strength.value} mg/tablet × ${sig.frequency} × ${daysSupply} = ${Math.ceil(totalTablets)} tablets`,
+        },
+      };
+    }
+    
+    if (strength.perUnit === 'ML') {
+      // mg/mL concentration - calculate mL needed
+      const mlPerDose = sig.dose / strength.value;
+      const totalML = mlPerDose * sig.frequency * daysSupply;
+      
+      return {
+        totalQuantity: totalML,
+        warnings,
+        details: {
+          method: 'concentration_conversion',
+          calculation: `${sig.dose} mg ÷ ${strength.value} mg/mL × ${sig.frequency} × ${daysSupply} = ${totalML} mL`,
+        },
+      };
+    }
+  }
+  
+  // Case 4: Unit mismatch - fall back to direct calculation with warning
+  const totalQuantity = sig.dose * sig.frequency * daysSupply;
+  warnings.push(
+    `Unit mismatch: prescription in "${sig.unit}" but drug strength is "${drugStrength.strength || 'unknown'}". ` +
+    `Using direct calculation. Verify quantity with prescriber.`
+  );
+  
+  return {
+    totalQuantity,
+    warnings,
+    details: {
+      method: 'direct',
+      calculation: `${sig.dose} × ${sig.frequency} × ${daysSupply} = ${totalQuantity} (with unit mismatch warning)`,
+    },
+  };
+}

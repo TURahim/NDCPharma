@@ -13,11 +13,18 @@ import {
   AIInsights,
   Metadata,
 } from '@api-contracts';
-import { nameToRxCui } from '@clients-rxnorm';
+import { nameToRxCui, getNdcsForRxcui } from '@clients-rxnorm';
 import { fdaClient, type NDCPackage } from '@clients-openfda';
-import { ndcRecommender, type NDCRecommendationRequest } from '@clients-openai';
+import { ndcRecommender, sanitizeForAI, type NDCRecommendationRequest } from '@clients-openai';
 import { createLogger } from '@core-guardrails';
 import { ENABLE_OPENAI_ENHANCER } from '@core-config';
+import { 
+  computeTotalQuantity, 
+  chooseBestPackage, 
+  calculateFillPrecision,
+  filterByDosageFormFamily,
+  type PackageCandidate 
+} from '@domain-ndc';
 
 const logger = createLogger({ service: 'CalculateEndpoint' });
 
@@ -105,24 +112,67 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     }
 
     // ==========================================
-    // STEP 2: Fetch NDC packages from FDA
+    // STEP 2A: Get NDC list from RxNorm
     // ==========================================
-    logger.debug('Fetching NDC packages from FDA', { rxcui });
+    logger.debug('Fetching NDC list from RxNorm', { rxcui });
     
-    const allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
+    const ndcList = await getNdcsForRxcui(rxcui);
     
-    if (!allPackages || allPackages.length === 0) {
-      throw new Error(`No NDC packages found for RxCUI: ${rxcui}`);
+    if (!ndcList || ndcList.length === 0) {
+      logger.warn('No NDCs found in RxNorm, will try FDA by RxCUI as fallback', { rxcui });
+    } else {
+      logger.info('Retrieved NDC list from RxNorm', {
+        rxcui,
+        ndcCount: ndcList.length,
+      });
+      
+      explanations.push({
+        step: 'fetch_ndcs_rxnorm',
+        description: `Retrieved ${ndcList.length} NDC codes from RxNorm`,
+        details: {
+          rxcui,
+          source: 'RxNorm',
+        },
+      });
     }
     
-    logger.info('Retrieved NDC packages from FDA', {
+    // ==========================================
+    // STEP 2B: Fetch package details from FDA
+    // ==========================================
+    logger.debug('Fetching package details from FDA', { ndcCount: ndcList.length });
+    
+    let allPackages: NDCPackage[];
+    
+    if (ndcList.length > 0) {
+      // Use NDC list from RxNorm to fetch FDA details
+      allPackages = await fdaClient.getPackagesByNdcList(ndcList, {});
+    } else {
+      // Fallback: Query FDA by RxCUI (less reliable)
+      logger.info('Using FDA RxCUI search as fallback', { rxcui });
+      allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
+      
+      explanations.push({
+        step: 'fetch_ndcs_fda_fallback',
+        description: 'Using FDA RxCUI search as fallback (RxNorm had no NDCs)',
+        details: {
+          rxcui,
+          source: 'openFDA',
+        },
+      });
+    }
+    
+    if (!allPackages || allPackages.length === 0) {
+      throw new Error(`No NDC packages found for drug (RxCUI: ${rxcui})`);
+    }
+    
+    logger.info('Retrieved package details from FDA', {
       rxcui,
       totalPackages: allPackages.length,
     });
     
     explanations.push({
-      step: 'fetch_ndcs',
-      description: `Retrieved ${allPackages.length} NDC packages from FDA database`,
+      step: 'enrich_packages_fda',
+      description: `Enriched ${allPackages.length} packages with FDA data (dosage form, marketing status, labeler)`,
       details: {
         rxcui,
         source: 'openFDA',
@@ -156,27 +206,40 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
       throw new Error('No active NDC packages available for this drug');
     }
 
-    // Filter by dosage form if specified
+    // ==========================================
+    // STEP 3: Filter by dosage form family
+    // ==========================================
     let filteredPackages = activePackages;
-    if (dosageForm && request.sig.unit) {
-      const normalizedUnit = request.sig.unit.toUpperCase();
-      filteredPackages = activePackages.filter(
-        pkg => pkg.dosageForm.toUpperCase() === normalizedUnit || 
-               pkg.packageSize.unit.toUpperCase() === normalizedUnit
-      );
+    
+    if (request.sig.unit) {
+      // Use dosage form family matching (solid, liquid, other)
+      filteredPackages = filterByDosageFormFamily(activePackages, request.sig.unit);
       
       if (filteredPackages.length > 0) {
         explanations.push({
           step: 'filter_dosage_form',
-          description: `Filtered to ${filteredPackages.length} packages matching dosage form: ${normalizedUnit}`,
+          description: `Filtered to ${filteredPackages.length} packages matching dosage form family for "${request.sig.unit}"`,
+          details: {
+            originalCount: activePackages.length,
+            filteredCount: filteredPackages.length,
+          },
         });
       } else {
-        // If no exact match, use all active packages
+        // If no match found, include all active packages with warning
         filteredPackages = activePackages;
         warnings.push(
           `No packages found matching dosage form "${request.sig.unit}". ` +
-          `Showing all available dosage forms.`
+          `Showing all available dosage forms. Verify prescription carefully.`
         );
+        
+        explanations.push({
+          step: 'filter_dosage_form',
+          description: 'No dosage form match found - showing all active packages',
+          details: {
+            requestedForm: request.sig.unit,
+            availableForms: Array.from(new Set(activePackages.map(p => p.dosageForm))),
+          },
+        });
       }
     }
 
@@ -186,128 +249,105 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     );
 
     // ==========================================
-    // STEP 3: Calculate total quantity needed
+    // STEP 4: Calculate total quantity needed (with unit conversion)
     // ==========================================
-    const totalQuantity = request.sig.dose * request.sig.frequency * request.daysSupply;
+    const quantityResult = computeTotalQuantity(
+      request.sig,
+      { strength, dosageForm },
+      request.daysSupply
+    );
+    
+    const totalQuantity = quantityResult.totalQuantity;
+    
+    // Add any quantity calculation warnings
+    warnings.push(...quantityResult.warnings);
     
     logger.info('Calculated total quantity', {
       dose: request.sig.dose,
       frequency: request.sig.frequency,
       daysSupply: request.daysSupply,
       totalQuantity,
+      method: quantityResult.details?.method,
     });
     
     explanations.push({
-      step: 'calculation',
-      description: `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
+      step: 'quantity_calculation',
+      description: quantityResult.details?.calculation || 
+        `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
       details: {
-        formula: `${request.sig.dose} ${request.sig.unit} × ${request.sig.frequency} times/day × ${request.daysSupply} days`,
+        method: quantityResult.details?.method || 'direct',
+        dose: request.sig.dose,
+        frequency: request.sig.frequency,
+        daysSupply: request.daysSupply,
         result: totalQuantity,
       },
     });
 
     // ==========================================
-    // STEP 4: Select optimal package(s)
+    // STEP 5: Select optimal package (MVP: Single package only)
     // ==========================================
-    let recommendedPackages: PackageRecommendation[] = [];
-    let overfillPercentage = 0;
-    let underfillPercentage = 0;
-
-    // Simple package selection algorithm (can be enhanced with AI)
-    let remainingQuantity = totalQuantity;
-    const selectedPackages: NDCPackage[] = [];
-
-    // Try to find exact match first
-    const exactMatch = sortedPackages.find(
-      (pkg: NDCPackage) => pkg.packageSize.quantity === totalQuantity
-    );
-
-    if (exactMatch) {
-      selectedPackages.push(exactMatch);
-      remainingQuantity = 0;
-      
-      explanations.push({
-        step: 'package_selection',
-        description: `Found exact match: ${exactMatch.packageSize.quantity} ${exactMatch.packageSize.unit} package`,
-        details: { ndc: exactMatch.ndc },
-      });
-    } else {
-      // Use largest packages that don't exceed total by more than 20%
-      const sortedDesc = [...sortedPackages].sort(
-        (a: NDCPackage, b: NDCPackage) => b.packageSize.quantity - a.packageSize.quantity
-      );
-
-      for (const pkg of sortedDesc) {
-        if (remainingQuantity <= 0) break;
-        
-        // Add package if it helps fulfill the prescription
-        if (pkg.packageSize.quantity <= remainingQuantity * 1.2) {
-          selectedPackages.push(pkg);
-          remainingQuantity -= pkg.packageSize.quantity;
-        }
-      }
-
-      // If still not enough, add smallest package to fulfill
-      if (remainingQuantity > 0) {
-        const smallestPackage = sortedPackages[0];
-        if (smallestPackage) {
-          selectedPackages.push(smallestPackage);
-          remainingQuantity -= smallestPackage.packageSize.quantity;
-        }
-      }
-      
-      explanations.push({
-        step: 'package_selection',
-        description: `Selected ${selectedPackages.length} package(s) to fulfill prescription`,
-        details: {
-          packages: selectedPackages.map((p: NDCPackage) => ({
-            ndc: p.ndc,
-            size: p.packageSize.quantity,
-          })),
-        },
-      });
-    }
-
-    // Calculate total dispensed quantity
-    const totalDispensed = selectedPackages.reduce(
-      (sum: number, pkg: NDCPackage) => sum + pkg.packageSize.quantity,
-      0
-    );
-
-    // Calculate overfill/underfill
-    if (totalDispensed > totalQuantity) {
-      overfillPercentage = ((totalDispensed - totalQuantity) / totalQuantity) * 100;
-    } else if (totalDispensed < totalQuantity) {
-      underfillPercentage = ((totalQuantity - totalDispensed) / totalQuantity) * 100;
-    }
-
-    // Add warnings for significant over/underfill
-    if (overfillPercentage > 10) {
-      warnings.push(
-        `Overfill of ${overfillPercentage.toFixed(1)}% (dispensing ${totalDispensed} vs ${totalQuantity} needed)`
-      );
-    }
-    if (underfillPercentage > 5) {
-      warnings.push(
-        `Underfill of ${underfillPercentage.toFixed(1)}% (dispensing ${totalDispensed} vs ${totalQuantity} needed)`
-      );
-    }
-
-    // Format recommendations
-    recommendedPackages = selectedPackages.map((pkg: NDCPackage) => ({
+    
+    // Convert NDCPackages to PackageCandidate format
+    const packageCandidates: PackageCandidate[] = sortedPackages.map(pkg => ({
       ndc: pkg.ndc,
-      packageSize: pkg.packageSize.quantity,
-      unit: pkg.packageSize.unit,
+      packageSize: {
+        quantity: pkg.packageSize.quantity,
+        unit: pkg.packageSize.unit,
+      },
       dosageForm: pkg.dosageForm,
       marketingStatus: String(pkg.marketingStatus),
       isActive: pkg.marketingStatus === 'ACTIVE' as any,
-      quantityNeeded: pkg.packageSize.quantity,
-      fillPrecision: (overfillPercentage === 0 && underfillPercentage === 0) ? 'exact' as const :
-                     overfillPercentage > 0 ? 'overfill' as const : 'underfill' as const,
+      labelerName: pkg.labelerName,
     }));
+    
+    // Use smart package selection algorithm
+    const selection = chooseBestPackage(packageCandidates, totalQuantity);
+    
+    // Add any selection warnings
+    warnings.push(...selection.warnings);
+    
+    const overfillPercentage = selection.overfillPercentage;
+    const underfillPercentage = selection.underfillPercentage;
+    
+    logger.info('Selected package', {
+      ndc: selection.selected.ndc,
+      packageSize: selection.selected.packageSize.quantity,
+      overfillPercentage,
+      underfillPercentage,
+    });
+    
+    explanations.push({
+      step: 'package_selection',
+      description: selection.explanation,
+      details: {
+        ndc: selection.selected.ndc,
+        packageSize: selection.selected.packageSize.quantity,
+        requiredQuantity: totalQuantity,
+        overfill: overfillPercentage,
+        underfill: underfillPercentage,
+      },
+    });
+
+    // Calculate precise fill metrics
+    const fillMetrics = calculateFillPrecision(
+      selection.selected.packageSize.quantity,
+      totalQuantity
+    );
+    
+    // Format recommendation
+    const recommendedPackages: PackageRecommendation[] = [{
+      ndc: selection.selected.ndc,
+      packageSize: selection.selected.packageSize.quantity,
+      unit: selection.selected.packageSize.unit,
+      dosageForm: selection.selected.dosageForm,
+      marketingStatus: selection.selected.marketingStatus,
+      isActive: selection.selected.isActive,
+      quantityNeeded: selection.selected.packageSize.quantity,
+      fillPrecision: fillMetrics.fillPrecision,
+    }];
 
     // ==========================================
-    // STEP 5: AI Enhancement (Optional)
+    // STEP 6: AI Enhancement (Optional - Annotation Only)
     // ==========================================
     let aiInsights: AIInsights | undefined;
     let metadata: Metadata = {
@@ -321,8 +361,8 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
       try {
         const aiStartTime = Date.now();
         
-        // Prepare AI request
-        const aiRequest: NDCRecommendationRequest = {
+        // Prepare AI request (sanitize to remove PHI/PII)
+        const rawAiRequest: NDCRecommendationRequest = {
           drug: {
             genericName: drugName || 'Unknown',
             rxcui,
@@ -334,17 +374,20 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
             daysSupply: request.daysSupply,
             quantityNeeded: totalQuantity,
           },
-          availablePackages: activePackages.map((pkg: NDCPackage) => ({
+          availablePackages: packageCandidates.map(pkg => ({
             ndc: pkg.ndc,
             packageSize: pkg.packageSize.quantity,
             unit: pkg.packageSize.unit,
             labeler: pkg.labelerName || 'Unknown',
-            isActive: pkg.marketingStatus === 'ACTIVE' as any,
+            isActive: pkg.isActive,
           })),
         };
+        
+        // Sanitize request to remove any PHI/PII before sending to AI
+        const aiRequest = sanitizeForAI(rawAiRequest);
 
-        // Get AI recommendation
-        const aiResult = await ndcRecommender.getEnhancedRecommendation(aiRequest);
+        // Get AI recommendation (for annotation only, not package selection)
+        const aiResult = await ndcRecommender.getEnhancedRecommendation(aiRequest as any);
         const aiExecutionTime = Date.now() - aiStartTime;
 
         logger.info('AI recommendation received', {
@@ -371,17 +414,28 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
           aiCost: aiResult.metadata.aiCost,
         };
 
-        // Update recommendations with AI insights
-        if (aiResult.primary) {
-          const primaryNdc = aiResult.primary.ndc;
-          const primaryIdx = recommendedPackages.findIndex(pkg => pkg.ndc === primaryNdc);
-          
-          if (primaryIdx !== -1) {
-            recommendedPackages[primaryIdx] = {
-              ...recommendedPackages[primaryIdx],
+        // IMPORTANT: AI only annotates, never overrides package selection
+        // Add AI reasoning/confidence to the selected package (if AI provided insights for it)
+        if (aiResult.primary && recommendedPackages[0]) {
+          // Only add annotations if AI selected the same package as our algorithm
+          if (aiResult.primary.ndc === recommendedPackages[0].ndc) {
+            recommendedPackages[0] = {
+              ...recommendedPackages[0],
               reasoning: aiResult.primary.reasoning,
               confidenceScore: aiResult.primary.confidenceScore,
-              source: aiResult.primary.source,
+              source: 'ai' as const,
+            };
+          } else {
+            // AI suggested different package - note this but don't change selection
+            logger.info('AI suggested different package than algorithm', {
+              algorithmNdc: recommendedPackages[0].ndc,
+              aiNdc: aiResult.primary.ndc,
+            });
+            
+            recommendedPackages[0] = {
+              ...recommendedPackages[0],
+              reasoning: `Algorithm-based selection. AI suggested ${aiResult.primary.ndc} but keeping algorithmic choice for consistency.`,
+              source: 'algorithm' as const,
             };
           }
         }
@@ -389,11 +443,12 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
         explanations.push({
           step: 'ai_enhancement',
           description: aiResult.metadata.usedAI
-            ? 'AI-enhanced recommendation with reasoning'
+            ? 'AI-enhanced recommendation with reasoning (annotation only)'
             : 'Algorithm-based recommendation (AI unavailable)',
           details: {
             usedAI: aiResult.metadata.usedAI,
             executionTime: aiExecutionTime,
+            note: 'AI provides annotations only; package selection is algorithm-based',
           },
         });
       } catch (aiError) {

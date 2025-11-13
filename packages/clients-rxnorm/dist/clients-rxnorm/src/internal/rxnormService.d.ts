@@ -38,6 +38,17 @@ export declare class RxNormService {
      */
     getRelatedConcepts(rxcui: RxCUI, termTypes?: string[]): Promise<RxNormRelatedResponse>;
     /**
+     * Get NDC codes for an RxCUI
+     * GET /rxcui/{rxcui}/ndcs.json
+     */
+    getNDCs(rxcui: RxCUI): Promise<{
+        ndcGroup?: {
+            ndcList?: {
+                ndc?: string[];
+            };
+        };
+    }>;
+    /**
      * Execute API request with retry logic
      */
     private executeWithRetry;

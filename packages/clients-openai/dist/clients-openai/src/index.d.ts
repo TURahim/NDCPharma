@@ -9,4 +9,5 @@ export { NDCRecommender, ndcRecommender };
 export type { NDCRecommendationRequest, NDCRecommendationResponse, OpenAIServiceConfig, OpenAIUsageMetrics, OpenAIError, AIRecommendationResult, CircuitBreakerState, } from './internal/openaiTypes';
 export type { PackageRecommendation, EnhancedRecommendationResult, } from './internal/recommender';
 export { SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, generateUserPrompt, validateResponseStructure, } from './internal/prompts';
+export { sanitizeForAI, detectPHI, } from './internal/phiSanitizer';
 //# sourceMappingURL=index.d.ts.map

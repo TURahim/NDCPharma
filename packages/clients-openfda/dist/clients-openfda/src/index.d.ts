@@ -118,6 +118,24 @@ export declare class FDAClient {
      * ```
      */
     getPackageSizes(rxcui: string, dosageForm?: string): Promise<number[]>;
+    /**
+     * Get NDC packages by batch list of NDC codes
+     * Returns detailed package information for each NDC
+     *
+     * @param ndcList Array of NDC codes
+     * @param options Search options (activeOnly, dosageForm)
+     * @returns Array of NDC packages
+     *
+     * @example
+     * ```typescript
+     * const ndcs = ['00071-0156-23', '00071-0156-34'];
+     * const packages = await fdaClient.getPackagesByNdcList(ndcs, { activeOnly: true });
+     * ```
+     */
+    getPackagesByNdcList(ndcList: string[], options?: {
+        activeOnly?: boolean;
+        dosageForm?: string;
+    }): Promise<NDCPackage[]>;
 }
 export declare const fdaClient: FDAClient;
 export type { NDCPackage, NDCDetails, NDCValidationResult, FDAServiceConfig, PackageSize, ActiveIngredient, MarketingStatus, } from './internal/fdaTypes';

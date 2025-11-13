@@ -157,6 +157,22 @@ class RxNormService {
         }
     }
     /**
+     * Get NDC codes for an RxCUI
+     * GET /rxcui/{rxcui}/ndcs.json
+     */
+    async getNDCs(rxcui) {
+        const startTime = Date.now();
+        try {
+            const response = await this.executeWithRetry(`/rxcui/${rxcui}/ndcs.json`);
+            const executionTime = Date.now() - startTime;
+            this.logger.logExternalAPICall("RxNorm", `/rxcui/${rxcui}/ndcs`, "GET", 200, executionTime);
+            return response;
+        }
+        catch (error) {
+            throw this.handleError(error, "getNDCs");
+        }
+    }
+    /**
      * Execute API request with retry logic
      */
     async executeWithRetry(endpoint, params) {

@@ -164,7 +164,41 @@ export async function nameToRxCui(
 }
 
 /**
- * Get NDCs for a given RxCUI
+ * Get NDC codes for a given RxCUI
+ * Returns actual NDC codes from RxNorm API
+ * 
+ * @param rxcui - RxNorm Concept Unique Identifier
+ * @param opts - Fetch options
+ * @returns Array of NDC codes
+ */
+export async function getNdcsForRxcui(
+  rxcui: string,
+  opts?: FetchOptions
+): Promise<string[]> {
+  try {
+    // RxNorm REST API endpoint: /rxcui/{rxcui}/ndcs.json
+    const response = await rxnormService.getNDCs(rxcui);
+    
+    if (!response.ndcGroup?.ndcList) {
+      return [];
+    }
+    
+    const ndcs = response.ndcGroup.ndcList.ndc || [];
+    
+    if (opts?.maxResults) {
+      return ndcs.slice(0, opts.maxResults);
+    }
+    
+    return ndcs;
+  } catch (error) {
+    // If direct NDC lookup fails, return empty array
+    // FDA will be queried as fallback
+    return [];
+  }
+}
+
+/**
+ * Get NDCs for a given RxCUI (legacy method for backward compatibility)
  * 
  * Note: RxNorm provides the primary NDC mapping. 
  * Use openFDA enrichNdcs() separately to add marketing status and packaging details.
@@ -172,44 +206,19 @@ export async function nameToRxCui(
  * @param rxcui - RxNorm Concept Unique Identifier
  * @param opts - Fetch options
  * @returns Array of NDC information
+ * @deprecated Use getNdcsForRxcui() for simpler NDC list retrieval
  */
 export async function rxcuiToNdcs(
   rxcui: string,
   opts?: FetchOptions
 ): Promise<NdcInfo[]> {
-  // Get related drug products (SCD/SBD level which have NDCs)
-  const related = await rxnormService.getRelatedConcepts(rxcui, ["SCD", "SBD"]);
+  const ndcCodes = await getNdcsForRxcui(rxcui, opts);
   
-  if (!related.relatedGroup?.conceptGroup) {
-    return [];
-  }
-  
-  const ndcs: NdcInfo[] = [];
-  
-  for (const group of related.relatedGroup.conceptGroup) {
-    if (!group.conceptProperties) continue;
-    
-    for (const concept of group.conceptProperties) {
-      // In a full implementation, we'd query RxNorm's RxCUI to NDC mapping here
-      // For now, return the concept information
-      // The actual NDC mapping would come from RxNorm's getNDCProperties endpoint
-      ndcs.push({
-        ndc: concept.rxcui, // Placeholder: actual implementation needs NDC lookup
-        packageDescription: concept.name,
-        dosageForm: undefined, // Will be enriched by openFDA
-        strength: undefined, // Will be enriched by openFDA
-      });
-      
-      if (opts?.maxResults && ndcs.length >= opts.maxResults) {
-        break;
-      }
-    }
-    
-    if (opts?.maxResults && ndcs.length >= opts.maxResults) {
-      break;
-    }
-  }
-  
-  return ndcs;
+  return ndcCodes.map(ndc => ({
+    ndc,
+    packageDescription: undefined,
+    dosageForm: undefined,
+    strength: undefined,
+  }));
 }
 

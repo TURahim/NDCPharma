@@ -215,6 +215,60 @@ class FDAClient {
         }
         return Array.from(sizes).sort((a, b) => a - b);
     }
+    /**
+     * Get NDC packages by batch list of NDC codes
+     * Returns detailed package information for each NDC
+     *
+     * @param ndcList Array of NDC codes
+     * @param options Search options (activeOnly, dosageForm)
+     * @returns Array of NDC packages
+     *
+     * @example
+     * ```typescript
+     * const ndcs = ['00071-0156-23', '00071-0156-34'];
+     * const packages = await fdaClient.getPackagesByNdcList(ndcs, { activeOnly: true });
+     * ```
+     */
+    async getPackagesByNdcList(ndcList, options = {}) {
+        if (!ndcList || ndcList.length === 0) {
+            return [];
+        }
+        const allPackages = [];
+        // Fetch details for each NDC
+        for (const ndc of ndcList) {
+            try {
+                const details = await this.getNDCDetails(ndc);
+                if (details) {
+                    // Convert NDCDetails to NDCPackage format
+                    const pkg = {
+                        ndc: details.ndc,
+                        packageSize: details.packageSize,
+                        dosageForm: details.dosageForm,
+                        marketingStatus: details.marketingStatus,
+                        labelerName: details.labelerName,
+                        productNdc: details.productNdc,
+                        genericName: details.genericName,
+                        brandName: details.brandName,
+                        activeIngredients: details.activeIngredients,
+                    };
+                    allPackages.push(pkg);
+                }
+            }
+            catch (error) {
+                // Skip NDCs that fail to fetch (may be invalid or not in FDA database)
+                continue;
+            }
+        }
+        // Apply filters
+        let packages = allPackages;
+        if (options.activeOnly) {
+            packages = (0, fdaMapper_1.filterActivePackages)(packages);
+        }
+        if (options.dosageForm) {
+            packages = (0, fdaMapper_1.filterByDosageForm)(packages, options.dosageForm);
+        }
+        return (0, fdaMapper_1.sortByPackageSize)(packages);
+    }
 }
 exports.FDAClient = FDAClient;
 // Export singleton instance

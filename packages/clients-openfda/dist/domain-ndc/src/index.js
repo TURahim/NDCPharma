@@ -23,3 +23,4 @@ __exportStar(require("./quantity"), exports);
 __exportStar(require("./packageMatch"), exports);
 __exportStar(require("./unitConverter"), exports);
 __exportStar(require("./validation"), exports);
+__exportStar(require("./dosageForm"), exports);

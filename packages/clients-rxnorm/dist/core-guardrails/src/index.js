@@ -1,7 +1,7 @@
 "use strict";
 /**
  * Core Guardrails Package
- * Logger, errors, validators, redaction, rate limiting
+ * Logger, errors, validators, redaction, rate limiting, calculation logging
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -24,3 +24,4 @@ __exportStar(require("./validators"), exports);
 __exportStar(require("./formatters"), exports);
 __exportStar(require("./redaction"), exports);
 __exportStar(require("./rateLimit"), exports);
+__exportStar(require("./calculationLogger"), exports);

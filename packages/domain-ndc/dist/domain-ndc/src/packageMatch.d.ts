@@ -1,30 +1,39 @@
 /**
- * Package Matching Logic
- * Pure functions for matching quantities to packages and computing over/underfill
+ * Package Selection and Matching Utilities
+ * Implements MVP-safe package selection logic
  */
-import { Package, MatchResult } from "./types";
+export interface PackageCandidate {
+    ndc: string;
+    packageSize: {
+        quantity: number;
+        unit: string;
+    };
+    dosageForm: string;
+    marketingStatus: string;
+    isActive: boolean;
+    labelerName?: string;
+}
+export interface PackageSelection {
+    selected: PackageCandidate;
+    overfillPercentage: number;
+    underfillPercentage: number;
+    warnings: string[];
+    explanation: string;
+}
 /**
- * Match required quantity to available packages
- * Prefers exact match, ≤5% overfill, else shows top-3 combinations
+ * Choose the best package for the required quantity
+ * MVP approach: Single package only, minimal overfill
  *
+ * @param packages - Array of available packages (should be pre-filtered for active status)
  * @param requiredQuantity - Total quantity needed
- * @param availablePackages - Array of available packages
- * @returns Match result with recommendations
+ * @returns Best package selection with metadata
  */
-export declare function matchPackagesToQuantity(requiredQuantity: number, availablePackages: Package[]): MatchResult;
+export declare function chooseBestPackage(packages: PackageCandidate[], requiredQuantity: number): PackageSelection;
 /**
- * Calculate overfill percentage
- *
- * @param dispensed - Quantity being dispensed
- * @param required - Quantity required
- * @returns Overfill percentage
+ * Calculate overfill/underfill percentages for a single package
  */
-export declare function calculateOverfill(dispensed: number, required: number): number;
-/**
- * Calculate underfill percentage
- *
- * @param dispensed - Quantity being dispensed
- * @param required - Quantity required
- * @returns Underfill percentage
- */
-export declare function calculateUnderfill(dispensed: number, required: number): number;
+export declare function calculateFillPrecision(packageQuantity: number, requiredQuantity: number): {
+    overfillPercentage: number;
+    underfillPercentage: number;
+    fillPrecision: 'exact' | 'overfill' | 'underfill';
+};

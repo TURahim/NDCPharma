@@ -34,3 +34,9 @@ export {
   validateResponseStructure,
 } from './internal/prompts';
 
+// Export PHI sanitization utilities
+export {
+  sanitizeForAI,
+  detectPHI,
+} from './internal/phiSanitizer';
+
