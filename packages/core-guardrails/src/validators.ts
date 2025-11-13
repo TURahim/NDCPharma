@@ -165,11 +165,18 @@ export function validateInteger(value: number, fieldName: string): number {
  * Validate email format
  */
 export function validateEmail(email: string): string {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!email || !emailRegex.test(email)) {
+  if (!email) {
     throw new Error("Invalid email format");
   }
-  return email.toLowerCase().trim();
+  
+  const trimmed = email.toLowerCase().trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  
+  if (!emailRegex.test(trimmed)) {
+    throw new Error("Invalid email format");
+  }
+  
+  return trimmed;
 }
 
 /**
