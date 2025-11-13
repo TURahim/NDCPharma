@@ -49873,7 +49873,9 @@ async function calculateHandler(req, res) {
       rxcui,
       totalPackages: allPackages.length
     });
-    const activePackages = allPackages.filter((pkg) => pkg.marketingStatus === "ACTIVE");
+    const activePackages = allPackages.filter(
+      (pkg) => pkg.marketingStatus && typeof pkg.marketingStatus === "object" ? pkg.marketingStatus.isActive : false
+    );
     const inactiveCount = allPackages.length - activePackages.length;
     if (inactiveCount > 0) {
       explanations.push({
@@ -49881,11 +49883,14 @@ async function calculateHandler(req, res) {
         description: `Filtered out ${inactiveCount} inactive/discontinued packages`,
         details: { activeCount: activePackages.length }
       });
-      allPackages.filter((pkg) => pkg.marketingStatus !== "ACTIVE").forEach((pkg) => {
+      allPackages.filter(
+        (pkg) => !pkg.marketingStatus || typeof pkg.marketingStatus === "object" && !pkg.marketingStatus.isActive
+      ).forEach((pkg) => {
+        const status = typeof pkg.marketingStatus === "object" ? pkg.marketingStatus.status : "unknown";
         excluded.push({
           ndc: pkg.ndc,
-          reason: `Inactive or discontinued (status: ${String(pkg.marketingStatus)})`,
-          marketingStatus: String(pkg.marketingStatus)
+          reason: `Inactive or discontinued (status: ${status})`,
+          marketingStatus: status
         });
       });
     }
@@ -49954,8 +49959,8 @@ async function calculateHandler(req, res) {
         unit: pkg.packageSize.unit
       },
       dosageForm: pkg.dosageForm,
-      marketingStatus: String(pkg.marketingStatus),
-      isActive: pkg.marketingStatus === "ACTIVE",
+      marketingStatus: typeof pkg.marketingStatus === "object" ? pkg.marketingStatus.status : "unknown",
+      isActive: typeof pkg.marketingStatus === "object" ? pkg.marketingStatus.isActive : false,
       labelerName: pkg.labeler
     }));
     const selection = chooseBestPackage(packageCandidates, totalQuantity);
@@ -50652,8 +50657,8 @@ var RATE_LIMITS = {
   // Unlimited
   ["pharmacist" /* PHARMACIST */]: 200,
   ["pharmacy_technician" /* PHARMACY_TECHNICIAN */]: 100,
-  anonymous: 10
-  // Very limited for unauthenticated requests
+  anonymous: 100
+  // Increased for development/testing (was 10)
 };
 async function checkUserRateLimit(userId, role) {
   const db = admin3.firestore();
