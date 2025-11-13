@@ -6,12 +6,17 @@
 
 const RXNORM_BASE_URL = 'https://rxnav.nlm.nih.gov/REST';
 
+export type MatchConfidence = 'exact' | 'high' | 'similar';
+
 export interface DrugSearchResult {
   rxcui: string;
   name: string;
+  displayName: string;
   synonym?: string;
   termType?: string;
   score?: string;
+  scoreValue: number;
+  confidence: MatchConfidence;
 }
 
 export interface RxNormApproximateResponse {
@@ -61,26 +66,63 @@ export async function searchDrugs(
 
     // Parse response
     const candidates = data.approximateGroup?.candidate || [];
-    
+
     if (candidates.length === 0) {
       return [];
     }
 
-    // Transform to our interface
-    const results: DrugSearchResult[] = candidates.map((candidate) => ({
-      rxcui: candidate.rxcui,
-      name: candidate.name,
-      score: candidate.score,
-    }));
+    const normalizeName = (name: string) =>
+      name
+        .toLowerCase()
+        .split(' ')
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(' ');
 
-    // Sort alphabetically by name (with null safety)
-    results.sort((a, b) => {
-      const nameA = a.name || '';
-      const nameB = b.name || '';
-      return nameA.localeCompare(nameB);
+    const classifyConfidence = (scoreValue: number): MatchConfidence => {
+      if (scoreValue <= 10) return 'exact';
+      if (scoreValue <= 50) return 'high';
+      return 'similar';
+    };
+
+    const uniqueMap = new Map<string, DrugSearchResult>();
+
+    for (const candidate of candidates) {
+      const rawName = candidate.name?.trim();
+      const lowered = rawName?.toLowerCase();
+
+      if (!rawName || !lowered) {
+        continue;
+      }
+
+      const scoreValue = Number(candidate.score ?? Number.POSITIVE_INFINITY);
+      const displayName = normalizeName(rawName);
+      const confidence = classifyConfidence(scoreValue);
+      const result: DrugSearchResult = {
+        rxcui: candidate.rxcui,
+        name: rawName,
+        displayName,
+        score: candidate.score,
+        scoreValue,
+        confidence,
+      };
+
+      const existing = uniqueMap.get(lowered);
+      if (!existing || scoreValue < existing.scoreValue) {
+        uniqueMap.set(lowered, result);
+      }
+    }
+
+    const deduped = Array.from(uniqueMap.values());
+
+    deduped.sort((a, b) => {
+      if (a.scoreValue === b.scoreValue) {
+        return a.displayName.localeCompare(b.displayName);
+      }
+      return a.scoreValue - b.scoreValue;
     });
 
-    return results;
+    return deduped.slice(0, maxResults);
   } catch (error) {
     // Graceful degradation - return empty array on any error
     console.error('Error searching drugs:', error);

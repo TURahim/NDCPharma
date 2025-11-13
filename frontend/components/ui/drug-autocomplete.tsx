@@ -11,6 +11,7 @@ import { Search, Loader2, X } from 'lucide-react';
 import { searchDrugs, DrugSearchResult } from '@/lib/rxnorm-client';
 import { useDebounce } from '@/hooks/use-debounce';
 import { cn } from '@/lib/utils';
+import { Badge } from '@/components/ui/badge';
 
 interface DrugAutocompleteProps {
   value: string;
@@ -250,11 +251,39 @@ export function DrugAutocomplete({
                 )}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <div className="text-sm font-medium text-gray-900">
-                  {highlightMatch(result.name, debouncedQuery)}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 text-sm font-medium text-gray-900">
+                    {highlightMatch(result.displayName ?? result.name, debouncedQuery)}
+                  </div>
+                  <Badge
+                    variant={
+                      result.confidence === 'exact'
+                        ? 'default'
+                        : result.confidence === 'high'
+                        ? 'secondary'
+                        : 'outline'
+                    }
+                    className={cn(
+                      'text-[10px] px-2 py-0.5 font-semibold tracking-wide uppercase',
+                      result.confidence === 'exact' && 'bg-green-100 text-green-700 border-green-200',
+                      result.confidence === 'high' && 'bg-blue-100 text-blue-700 border-blue-200',
+                      result.confidence === 'similar' && 'bg-gray-100 text-gray-600 border-gray-200'
+                    )}
+                  >
+                    {result.confidence === 'exact'
+                      ? 'Exact match'
+                      : result.confidence === 'high'
+                      ? 'Close match'
+                      : 'Related'}
+                  </Badge>
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
                   RxCUI: {result.rxcui}
+                  {typeof result.scoreValue === 'number' && Number.isFinite(result.scoreValue) && (
+                    <span className="ml-2 text-gray-400">
+                      Score: {Math.round(result.scoreValue)}
+                    </span>
+                  )}
                 </div>
               </button>
             ))}
