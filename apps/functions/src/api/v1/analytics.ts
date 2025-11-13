@@ -9,7 +9,7 @@
  * - Top drugs
  */
 
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import * as admin from 'firebase-admin';
 import { AuthenticatedRequest } from './middlewares/auth';
 import { getCalculationStats } from '@core-guardrails';

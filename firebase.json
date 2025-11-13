@@ -3,7 +3,7 @@
     {
       "source": "apps/functions",
       "codebase": "default",
-      "runtime": "nodejs18",
+      "runtime": "nodejs20",
       "disallowLegacyRuntimeConfig": true,
       "ignore": [
         "node_modules",
@@ -18,7 +18,11 @@
       ],
       "predeploy": [
         "pnpm --filter @ndc/functions lint",
-        "pnpm --filter @ndc/functions build"
+        "pnpm --filter @ndc/functions build",
+        "cp apps/functions/package-deploy.json apps/functions/package.json"
+      ],
+      "postdeploy": [
+        "git checkout apps/functions/package.json"
       ]
     }
   ],

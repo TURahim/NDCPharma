@@ -80,6 +80,7 @@ export function sanitizeString(input: string): string {
   // Remove potentially dangerous characters
   return input
     .replace(/[<>]/g, '') // Remove HTML tags
+    // eslint-disable-next-line no-control-regex
     .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
     .trim();
 }
@@ -95,6 +96,7 @@ export function isValidDrugName(name: string): boolean {
   }
   
   // Allow letters, numbers, spaces, and common pharmaceutical characters
+  // eslint-disable-next-line no-useless-escape
   const validPattern = /^[A-Za-z0-9\s\-\/\(\).]+$/;
   return validPattern.test(name);
 }

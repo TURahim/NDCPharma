@@ -25187,6 +25187,7 @@ __export(index_exports, {
 });
 module.exports = __toCommonJS(index_exports);
 var functions = __toESM(require("firebase-functions"), 1);
+var admin4 = __toESM(require("firebase-admin"), 1);
 var import_express = __toESM(require_express2(), 1);
 var import_cors = __toESM(require_lib3(), 1);
 
@@ -32310,18 +32311,18 @@ var http_default = isHttpAdapterSupported && function httpAdapter(config2) {
         )
       ));
     }
-    let auth = void 0;
+    let auth2 = void 0;
     if (config2.auth) {
       const username = config2.auth.username || "";
       const password = config2.auth.password || "";
-      auth = username + ":" + password;
+      auth2 = username + ":" + password;
     }
-    if (!auth && parsed.username) {
+    if (!auth2 && parsed.username) {
       const urlUsername = parsed.username;
       const urlPassword = parsed.password;
-      auth = urlUsername + ":" + urlPassword;
+      auth2 = urlUsername + ":" + urlPassword;
     }
-    auth && headers.delete("authorization");
+    auth2 && headers.delete("authorization");
     let path;
     try {
       path = buildURL(
@@ -32346,7 +32347,7 @@ var http_default = isHttpAdapterSupported && function httpAdapter(config2) {
       method,
       headers: headers.toJSON(),
       agents: { http: config2.httpAgent, https: config2.httpsAgent },
-      auth,
+      auth: auth2,
       protocol,
       family,
       beforeRedirect: dispatchBeforeRedirect,
@@ -32703,13 +32704,13 @@ function mergeConfig(config1, config2) {
 // ../../node_modules/.pnpm/axios@1.13.2/node_modules/axios/lib/helpers/resolveConfig.js
 var resolveConfig_default = (config2) => {
   const newConfig = mergeConfig({}, config2);
-  let { data, withXSRFToken, xsrfHeaderName, xsrfCookieName, headers, auth } = newConfig;
+  let { data, withXSRFToken, xsrfHeaderName, xsrfCookieName, headers, auth: auth2 } = newConfig;
   newConfig.headers = headers = AxiosHeaders_default.from(headers);
   newConfig.url = buildURL(buildFullPath(newConfig.baseURL, newConfig.url, newConfig.allowAbsoluteUrls), config2.params, config2.paramsSerializer);
-  if (auth) {
+  if (auth2) {
     headers.set(
       "Authorization",
-      "Basic " + btoa((auth.username || "") + ":" + (auth.password ? unescape(encodeURIComponent(auth.password)) : ""))
+      "Basic " + btoa((auth2.username || "") + ":" + (auth2.password ? unescape(encodeURIComponent(auth2.password)) : ""))
     );
   }
   if (utils_default.isFormData(data)) {
@@ -33776,6 +33777,17 @@ var {
 } = axios_default;
 
 // ../../packages/core-guardrails/src/logger.ts
+var import_crypto2 = require("crypto");
+var GCP_SEVERITY_MAP = {
+  debug: "DEBUG",
+  info: "INFO",
+  warn: "WARNING",
+  error: "ERROR",
+  critical: "CRITICAL"
+};
+function generateCorrelationId() {
+  return (0, import_crypto2.randomUUID)();
+}
 var LOG_LEVEL_PRIORITY = {
   debug: 0,
   info: 1,
@@ -33791,9 +33803,29 @@ function formatLogEntry(level, message, context) {
   const timestamp = (/* @__PURE__ */ new Date()).toISOString();
   const logEntry = {
     timestamp,
-    level: level.toUpperCase(),
+    severity: GCP_SEVERITY_MAP[level],
+    // GCP-compatible severity
     message,
-    ...context && { context }
+    // Add GCP trace context if available
+    ...context?.traceId && {
+      "logging.googleapis.com/trace": `projects/${env.GCP_PROJECT_ID || "ndcpharma-8f3c6"}/traces/${context.traceId}`
+    },
+    ...context?.spanId && {
+      "logging.googleapis.com/spanId": context.spanId
+    },
+    // Add correlation/request ID for distributed tracing
+    ...context?.correlationId && { correlationId: context.correlationId },
+    ...context?.requestId && { requestId: context.requestId },
+    // Add service context
+    ...context?.service && { serviceContext: { service: context.service } },
+    // Add all other context
+    ...context && {
+      context: Object.fromEntries(
+        Object.entries(context).filter(
+          ([key]) => !["traceId", "spanId", "correlationId", "requestId", "service"].includes(key)
+        )
+      )
+    }
   };
   if (env.NODE_ENV === "production") {
     return JSON.stringify(logEntry);
@@ -34082,111 +34114,63 @@ function sanitizeLogContext(context) {
   return sanitized;
 }
 
-// ../../packages/core-guardrails/src/rateLimit.ts
-var TokenBucket = class {
-  constructor(capacity, refillRate) {
-    this.capacity = capacity;
-    this.refillRate = refillRate;
-    this.tokens = capacity;
-    this.lastRefill = Date.now();
-  }
-  /**
-   * Try to consume a token
-   * 
-   * @returns True if token was consumed, false if bucket empty
-   */
-  consume() {
-    this.refill();
-    if (this.tokens >= 1) {
-      this.tokens -= 1;
-      return true;
+// ../../packages/core-guardrails/src/calculationLogger.ts
+var import_firestore = require("firebase-admin/firestore");
+var logger2 = createLogger({ service: "CalculationLogger" });
+async function getCalculationStats(db, options = {}) {
+  try {
+    let query = db.collection("calculationLogs");
+    if (options.startDate) {
+      query = query.where("timestamp", ">=", options.startDate);
     }
-    return false;
-  }
-  /**
-   * Refill tokens based on elapsed time
-   */
-  refill() {
-    const now = Date.now();
-    const elapsed = (now - this.lastRefill) / 1e3;
-    const tokensToAdd = elapsed * this.refillRate;
-    this.tokens = Math.min(this.capacity, this.tokens + tokensToAdd);
-    this.lastRefill = now;
-  }
-  /**
-   * Get remaining tokens
-   */
-  getRemaining() {
-    this.refill();
-    return Math.floor(this.tokens);
-  }
-  /**
-   * Get time until next token (seconds)
-   */
-  getRetryAfter() {
-    if (this.tokens >= 1) return 0;
-    return Math.ceil((1 - this.tokens) / this.refillRate);
-  }
-};
-var RateLimiter = class {
-  constructor(config2) {
-    this.config = config2;
-    this.buckets = /* @__PURE__ */ new Map();
-    setInterval(() => this.cleanup(), 5 * 60 * 1e3);
-  }
-  /**
-   * Check if a request should be rate limited
-   * 
-   * @param identifier - User identifier (userId, IP, etc.)
-   * @returns Rate limit result
-   */
-  checkLimit(identifier) {
-    let bucket = this.buckets.get(identifier);
-    if (!bucket) {
-      bucket = new TokenBucket(
-        this.config.burstCapacity,
-        this.config.refillRate
-      );
-      this.buckets.set(identifier, bucket);
+    if (options.endDate) {
+      query = query.where("timestamp", "<=", options.endDate);
     }
-    const allowed = bucket.consume();
-    const remaining = bucket.getRemaining();
-    const retryAfter = bucket.getRetryAfter();
-    const resetAt = Date.now() + retryAfter * 1e3;
+    if (options.userId) {
+      query = query.where("userId", "==", options.userId);
+    }
+    const snapshot = await query.get();
+    if (snapshot.empty) {
+      return {
+        totalCalculations: 0,
+        successRate: 0,
+        averageExecutionTime: 0,
+        cacheHitRate: 0,
+        aiUsageRate: 0,
+        topDrugs: []
+      };
+    }
+    const logs = snapshot.docs.map((doc) => doc.data());
+    const totalCalculations = logs.length;
+    const successCount = logs.filter((l) => l.response.success).length;
+    const cacheHits = logs.filter((l) => l.cacheHit).length;
+    const aiUsed = logs.filter((l) => l.aiUsed).length;
+    const totalExecutionTime = logs.reduce((sum, l) => sum + l.executionTime, 0);
+    const drugCounts = /* @__PURE__ */ new Map();
+    logs.forEach((log2) => {
+      const drugName = log2.request.drug.name || log2.request.drug.rxcui || "Unknown";
+      drugCounts.set(drugName, (drugCounts.get(drugName) || 0) + 1);
+    });
+    const topDrugs = Array.from(drugCounts.entries()).map(([drugName, count]) => ({ drugName, count })).sort((a, b) => b.count - a.count).slice(0, 10);
     return {
-      allowed,
-      remaining,
-      resetAt,
-      retryAfter: allowed ? void 0 : retryAfter
+      totalCalculations,
+      successRate: successCount / totalCalculations,
+      averageExecutionTime: totalExecutionTime / totalCalculations,
+      cacheHitRate: cacheHits / totalCalculations,
+      aiUsageRate: aiUsed / totalCalculations,
+      topDrugs
+    };
+  } catch (error) {
+    logger2.error("Failed to get calculation stats", error);
+    return {
+      totalCalculations: 0,
+      successRate: 0,
+      averageExecutionTime: 0,
+      cacheHitRate: 0,
+      aiUsageRate: 0,
+      topDrugs: []
     };
   }
-  /**
-   * Cleanup inactive buckets
-   */
-  cleanup() {
-    if (this.buckets.size > 1e3) {
-      this.buckets.clear();
-    }
-  }
-  /**
-   * Reset rate limit for a user (admin function)
-   * 
-   * @param identifier - User identifier
-   */
-  reset(identifier) {
-    this.buckets.delete(identifier);
-  }
-};
-function createRateLimiter(requestsPerHour = 100, burstCapacity) {
-  const config2 = {
-    maxRequests: requestsPerHour,
-    windowMs: 60 * 60 * 1e3,
-    // 1 hour
-    burstCapacity: burstCapacity || Math.ceil(requestsPerHour * 0.2),
-    refillRate: requestsPerHour / 3600
-    // tokens per second
-  };
-  return new RateLimiter(config2);
 }
 
 // ../../packages/clients-rxnorm/src/internal/rxnormService.ts
@@ -34788,6 +34772,11 @@ async function nameToRxCui(name, opts) {
     };
   }
 }
+
+// ../../packages/clients-rxnorm/src/cachedFacade.ts
+var logger3 = createLogger({ service: "RxNormCachedFacade" });
+var DRUG_NORMALIZATION_TTL = 24 * 60 * 60 * 1e3;
+var RXCUI_DETAILS_TTL = 24 * 60 * 60 * 1e3;
 
 // ../../packages/clients-openfda/src/internal/fdaService.ts
 var FDAService = class {
@@ -35395,6 +35384,213 @@ function calculateDaysUntilDate(dateString) {
   }
 }
 
+// ../../packages/clients-openfda/src/cachedClient.ts
+var logger4 = createLogger({ service: "FDACachedClient" });
+var NDC_LOOKUP_TTL = 60 * 60 * 1e3;
+var NDC_VALIDATION_TTL = 60 * 60 * 1e3;
+var cacheService = null;
+function isCacheAvailable() {
+  return cacheService !== null;
+}
+function createNDCLookupKey(rxcui, options) {
+  const parts = [`ndc:lookup:${rxcui}`];
+  if (options?.activeOnly) parts.push("active");
+  if (options?.dosageForm) parts.push(options.dosageForm.toLowerCase());
+  return parts.join(":");
+}
+function createNDCDetailsKey(ndc) {
+  return `ndc:details:${ndc.replace(/-/g, "")}`;
+}
+function createNDCValidationKey(ndc) {
+  return `ndc:validate:${ndc.replace(/-/g, "")}`;
+}
+var CachedFDAClient = class {
+  constructor(config2) {
+    this.client = config2 ? new FDAClient(config2) : fdaClient;
+  }
+  /**
+   * Get NDC packages by RxCUI with caching
+   * 
+   * @param rxcui RxNorm Concept Unique Identifier
+   * @param options Search options + skipCache
+   * @returns Array of NDC packages
+   */
+  async getNDCsByRxCUI(rxcui, options = {}) {
+    const cacheKey = createNDCLookupKey(rxcui, {
+      activeOnly: options.activeOnly,
+      dosageForm: options.dosageForm
+    });
+    const startTime = Date.now();
+    if (isCacheAvailable() && !options.skipCache) {
+      try {
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+          const cacheLatency = Date.now() - startTime;
+          logger4.debug("Cache hit for NDC lookup", {
+            rxcui,
+            packageCount: cached.length,
+            cacheLatency
+          });
+          return cached;
+        }
+      } catch (error) {
+        logger4.warn("Cache get failed, falling back to API", {
+          error,
+          rxcui
+        });
+      }
+    }
+    logger4.debug("Cache miss for NDC lookup", { rxcui });
+    const packages = await this.client.getNDCsByRxCUI(rxcui, options);
+    if (isCacheAvailable()) {
+      try {
+        await cacheService.set(cacheKey, packages, NDC_LOOKUP_TTL);
+        logger4.debug("Stored NDC lookup in cache", {
+          rxcui,
+          packageCount: packages.length,
+          ttl: NDC_LOOKUP_TTL
+        });
+      } catch (error) {
+        logger4.warn("Cache set failed", {
+          error,
+          rxcui
+        });
+      }
+    }
+    const totalLatency = Date.now() - startTime;
+    logger4.info("NDC lookup completed", {
+      rxcui,
+      packageCount: packages.length,
+      totalLatency,
+      cacheUsed: false
+    });
+    return packages;
+  }
+  /**
+   * Get NDC details with caching
+   * 
+   * @param packageNdc Package NDC (11-digit format)
+   * @param options Options + skipCache
+   * @returns NDC details or null if not found
+   */
+  async getNDCDetails(packageNdc, options) {
+    const cacheKey = createNDCDetailsKey(packageNdc);
+    const startTime = Date.now();
+    if (isCacheAvailable() && !options?.skipCache) {
+      try {
+        const cached = await cacheService.get(cacheKey);
+        if (cached !== void 0) {
+          const cacheLatency = Date.now() - startTime;
+          logger4.debug("Cache hit for NDC details", {
+            ndc: packageNdc,
+            found: cached !== null,
+            cacheLatency
+          });
+          return cached;
+        }
+      } catch (error) {
+        logger4.warn("Cache get failed, falling back to API", {
+          error,
+          ndc: packageNdc
+        });
+      }
+    }
+    logger4.debug("Cache miss for NDC details", { ndc: packageNdc });
+    const details = await this.client.getNDCDetails(packageNdc);
+    if (isCacheAvailable()) {
+      try {
+        await cacheService.set(cacheKey, details, NDC_LOOKUP_TTL);
+        logger4.debug("Stored NDC details in cache", {
+          ndc: packageNdc,
+          found: details !== null,
+          ttl: NDC_LOOKUP_TTL
+        });
+      } catch (error) {
+        logger4.warn("Cache set failed", {
+          error,
+          ndc: packageNdc
+        });
+      }
+    }
+    const totalLatency = Date.now() - startTime;
+    logger4.info("NDC details fetch completed", {
+      ndc: packageNdc,
+      found: details !== null,
+      totalLatency,
+      cacheUsed: false
+    });
+    return details;
+  }
+  /**
+   * Validate NDC with caching
+   * 
+   * @param ndc NDC code to validate
+   * @param options Options + skipCache
+   * @returns Validation result with status
+   */
+  async validateNDC(ndc, options) {
+    const cacheKey = createNDCValidationKey(ndc);
+    const startTime = Date.now();
+    if (isCacheAvailable() && !options?.skipCache) {
+      try {
+        const cached = await cacheService.get(cacheKey);
+        if (cached) {
+          const cacheLatency = Date.now() - startTime;
+          logger4.debug("Cache hit for NDC validation", {
+            ndc,
+            isValid: cached.isValid,
+            cacheLatency
+          });
+          return cached;
+        }
+      } catch (error) {
+        logger4.warn("Cache get failed, falling back to API", {
+          error,
+          ndc
+        });
+      }
+    }
+    logger4.debug("Cache miss for NDC validation", { ndc });
+    const validation = await this.client.validateNDC(ndc);
+    if (isCacheAvailable()) {
+      try {
+        await cacheService.set(cacheKey, validation, NDC_VALIDATION_TTL);
+        logger4.debug("Stored NDC validation in cache", {
+          ndc,
+          isValid: validation.isValid,
+          ttl: NDC_VALIDATION_TTL
+        });
+      } catch (error) {
+        logger4.warn("Cache set failed", {
+          error,
+          ndc
+        });
+      }
+    }
+    const totalLatency = Date.now() - startTime;
+    logger4.info("NDC validation completed", {
+      ndc,
+      isValid: validation.isValid,
+      totalLatency,
+      cacheUsed: false
+    });
+    return validation;
+  }
+  /**
+   * Passthrough methods (non-cached as they aggregate data)
+   */
+  async searchByGenericName(genericName, options = {}) {
+    return this.client.searchByGenericName(genericName, options);
+  }
+  async getDosageForms(rxcui) {
+    return this.client.getDosageForms(rxcui);
+  }
+  async getPackageSizes(rxcui, dosageForm) {
+    return this.client.getPackageSizes(rxcui, dosageForm);
+  }
+};
+var cachedFdaClient = new CachedFDAClient();
+
 // ../../packages/clients-openfda/src/index.ts
 var FDAClient = class {
   constructor(config2) {
@@ -35592,7 +35788,7 @@ var FDAClient = class {
 var fdaClient = new FDAClient();
 
 // src/api/v1/health.ts
-var logger2 = createLogger({ service: "HealthCheck" });
+var logger5 = createLogger({ service: "HealthCheck" });
 async function healthCheck(_req, res) {
   const startTime = Date.now();
   const services = {
@@ -35609,7 +35805,7 @@ async function healthCheck(_req, res) {
       responseTime: Date.now() - rxnormStart
     };
   } catch (error) {
-    logger2.warn("RxNorm health check failed", { error });
+    logger5.warn("RxNorm health check failed", { error });
     services.rxnorm = {
       status: "unhealthy",
       error: error.message
@@ -35627,7 +35823,7 @@ async function healthCheck(_req, res) {
       responseTime: Date.now() - fdaStart
     };
   } catch (error) {
-    logger2.warn("FDA health check failed", { error });
+    logger5.warn("FDA health check failed", { error });
     services.fda = {
       status: "unhealthy",
       error: error.message
@@ -35642,7 +35838,7 @@ async function healthCheck(_req, res) {
         responseTime: Date.now() - openaiStart
       };
     } catch (error) {
-      logger2.warn("OpenAI health check failed", { error });
+      logger5.warn("OpenAI health check failed", { error });
       services.openai = {
         status: "unhealthy",
         error: error.message
@@ -35655,7 +35851,7 @@ async function healthCheck(_req, res) {
       responseTime: 0
     };
   } catch (error) {
-    logger2.warn("Firestore health check failed", { error });
+    logger5.warn("Firestore health check failed", { error });
     services.firestore = {
       status: "unhealthy",
       error: error.message
@@ -35679,7 +35875,7 @@ async function healthCheck(_req, res) {
     uptime: process.uptime()
   };
   const statusCode = overallStatus === "healthy" ? 200 : overallStatus === "degraded" ? 200 : 503;
-  logger2.info("Health check completed", {
+  logger5.info("Health check completed", {
     status: overallStatus,
     executionTime: Date.now() - startTime
   });
@@ -35687,7 +35883,7 @@ async function healthCheck(_req, res) {
 }
 
 // src/api/v1/calculate.ts
-var logger3 = createLogger({ service: "CalculateEndpoint" });
+var logger6 = createLogger({ service: "CalculateEndpoint" });
 async function calculateHandler(req, res) {
   const startTime = Date.now();
   const request = req.body;
@@ -35695,7 +35891,7 @@ async function calculateHandler(req, res) {
   const warnings = [];
   const excluded = [];
   try {
-    logger3.info("Starting NDC calculation", {
+    logger6.info("Starting NDC calculation", {
       drug: request.drug,
       daysSupply: request.daysSupply
     });
@@ -35705,14 +35901,14 @@ async function calculateHandler(req, res) {
     let strength;
     if (request.drug.rxcui) {
       rxcui = request.drug.rxcui;
-      logger3.debug("Using provided RxCUI", { rxcui });
+      logger6.debug("Using provided RxCUI", { rxcui });
       explanations.push({
         step: "normalization",
         description: `Using provided RxCUI: ${rxcui}`,
         details: { source: "user_provided" }
       });
     } else if (request.drug.name) {
-      logger3.debug("Normalizing drug name", { drugName: request.drug.name });
+      logger6.debug("Normalizing drug name", { drugName: request.drug.name });
       const normalizationResult = await nameToRxCui(request.drug.name);
       if (!normalizationResult.rxcui) {
         throw new Error(`Drug not found: ${request.drug.name}`);
@@ -35721,7 +35917,7 @@ async function calculateHandler(req, res) {
       drugName = normalizationResult.name;
       dosageForm = normalizationResult.dosageForm;
       strength = normalizationResult.strength;
-      logger3.info("Drug normalized successfully", {
+      logger6.info("Drug normalized successfully", {
         originalName: request.drug.name,
         normalizedName: drugName,
         rxcui,
@@ -35744,12 +35940,12 @@ async function calculateHandler(req, res) {
     } else {
       throw new Error("Either drug name or RxCUI must be provided");
     }
-    logger3.debug("Fetching NDC packages from FDA", { rxcui });
+    logger6.debug("Fetching NDC packages from FDA", { rxcui });
     const allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
     if (!allPackages || allPackages.length === 0) {
       throw new Error(`No NDC packages found for RxCUI: ${rxcui}`);
     }
-    logger3.info("Retrieved NDC packages from FDA", {
+    logger6.info("Retrieved NDC packages from FDA", {
       rxcui,
       totalPackages: allPackages.length
     });
@@ -35802,7 +35998,7 @@ async function calculateHandler(req, res) {
       (a, b) => (a.packageSize?.quantity || 0) - (b.packageSize?.quantity || 0)
     );
     const totalQuantity = request.sig.dose * request.sig.frequency * request.daysSupply;
-    logger3.info("Calculated total quantity", {
+    logger6.info("Calculated total quantity", {
       dose: request.sig.dose,
       frequency: request.sig.frequency,
       daysSupply: request.daysSupply,
@@ -35889,7 +36085,7 @@ async function calculateHandler(req, res) {
       isActive: pkg.marketingStatus === "ACTIVE"
     }));
     const executionTime = Date.now() - startTime;
-    logger3.info("Calculation completed successfully", {
+    logger6.info("Calculation completed successfully", {
       rxcui,
       totalQuantity,
       recommendedPackages: recommendedPackages.length,
@@ -35916,7 +36112,7 @@ async function calculateHandler(req, res) {
     res.status(200).json(response);
   } catch (error) {
     const executionTime = Date.now() - startTime;
-    logger3.error("Calculation failed", error, {
+    logger6.error("Calculation failed", error, {
       request,
       executionTime
     });
@@ -35932,21 +36128,254 @@ async function calculateHandler(req, res) {
   }
 }
 
+// src/api/v1/analytics.ts
+var admin = __toESM(require("firebase-admin"), 1);
+var logger7 = createLogger({ service: "AnalyticsEndpoint" });
+async function getSystemAnalytics(req, res) {
+  const startTime = Date.now();
+  try {
+    const db = admin.firestore();
+    const daysBack = parseInt(req.query.days) || 30;
+    const startDate = /* @__PURE__ */ new Date();
+    startDate.setDate(startDate.getDate() - daysBack);
+    const [calculationStats, userStats, cacheStats] = await Promise.all([
+      getCalculationStats(db, { startDate }),
+      getUserActivityStats(db),
+      getCachePerformance(db, startDate)
+    ]);
+    const executionTime = Date.now() - startTime;
+    res.status(200).json({
+      success: true,
+      data: {
+        period: {
+          days: daysBack,
+          startDate: startDate.toISOString(),
+          endDate: (/* @__PURE__ */ new Date()).toISOString()
+        },
+        calculations: calculationStats,
+        users: userStats,
+        cache: cacheStats
+      },
+      metadata: {
+        executionTime,
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+  } catch (error) {
+    logger7.error("Failed to get system analytics", error, {
+      userId: req.user?.uid
+    });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "ANALYTICS_ERROR",
+        message: "Failed to retrieve system analytics"
+      }
+    });
+  }
+}
+async function getUserActivityStats(db) {
+  try {
+    const usersSnapshot = await db.collection("users").get();
+    const activitySnapshot = await db.collection("userActivity").get();
+    const totalUsers = usersSnapshot.size;
+    const activeUsers = activitySnapshot.docs.filter(
+      (doc) => doc.data().isActive
+    ).length;
+    const usersByRole = {};
+    usersSnapshot.docs.forEach((doc) => {
+      const role = doc.data().role || "unknown";
+      usersByRole[role] = (usersByRole[role] || 0) + 1;
+    });
+    const topUsers = activitySnapshot.docs.map((doc) => ({
+      userId: doc.id,
+      calculationCount: doc.data().calculationCount || 0
+    })).sort((a, b) => b.calculationCount - a.calculationCount).slice(0, 10);
+    return {
+      totalUsers,
+      activeUsers,
+      usersByRole,
+      topUsers
+    };
+  } catch (error) {
+    logger7.error("Failed to get user activity stats", error);
+    return {
+      totalUsers: 0,
+      activeUsers: 0,
+      usersByRole: {},
+      topUsers: []
+    };
+  }
+}
+async function getCachePerformance(db, startDate) {
+  try {
+    const logsSnapshot = await db.collection("calculationLogs").where("timestamp", ">=", startDate).get();
+    if (logsSnapshot.empty) {
+      return {
+        totalRequests: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        hitRate: 0,
+        averageLatency: 0
+      };
+    }
+    const logs = logsSnapshot.docs.map((doc) => doc.data());
+    const totalRequests = logs.length;
+    const cacheHits = logs.filter((log2) => log2.cacheHit).length;
+    const cacheMisses = totalRequests - cacheHits;
+    const hitRate = cacheHits / totalRequests;
+    const cacheLatencies = logs.filter((log2) => log2.cacheDetails?.latency).map((log2) => log2.cacheDetails.latency);
+    const averageLatency = cacheLatencies.length > 0 ? cacheLatencies.reduce((sum, lat) => sum + lat, 0) / cacheLatencies.length : 0;
+    return {
+      totalRequests,
+      cacheHits,
+      cacheMisses,
+      hitRate,
+      averageLatency
+    };
+  } catch (error) {
+    logger7.error("Failed to get cache performance", error);
+    return {
+      totalRequests: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      hitRate: 0,
+      averageLatency: 0
+    };
+  }
+}
+async function getUserAnalytics(req, res) {
+  const startTime = Date.now();
+  try {
+    const requestedUserId = req.params.userId;
+    const currentUserId = req.user?.uid;
+    const isAdmin = req.user?.role === "admin";
+    if (requestedUserId !== currentUserId && !isAdmin) {
+      res.status(403).json({
+        success: false,
+        error: {
+          code: "FORBIDDEN",
+          message: "You can only view your own analytics"
+        }
+      });
+      return;
+    }
+    const db = admin.firestore();
+    const daysBack = parseInt(req.query.days) || 30;
+    const startDate = /* @__PURE__ */ new Date();
+    startDate.setDate(startDate.getDate() - daysBack);
+    const stats = await getCalculationStats(db, {
+      startDate,
+      userId: requestedUserId
+    });
+    const activityDoc = await db.collection("userActivity").doc(requestedUserId).get();
+    const activity = activityDoc.exists ? activityDoc.data() : null;
+    const executionTime = Date.now() - startTime;
+    res.status(200).json({
+      success: true,
+      data: {
+        userId: requestedUserId,
+        period: {
+          days: daysBack,
+          startDate: startDate.toISOString(),
+          endDate: (/* @__PURE__ */ new Date()).toISOString()
+        },
+        calculations: stats,
+        activity: activity ? {
+          totalCalculations: activity.calculationCount,
+          totalRequests: activity.totalRequests,
+          currentHourRequests: activity.currentHourRequests,
+          lastActive: activity.lastActiveAt?.toDate?.().toISOString()
+        } : null
+      },
+      metadata: {
+        executionTime,
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+  } catch (error) {
+    logger7.error("Failed to get user analytics", error, {
+      userId: req.user?.uid,
+      requestedUserId: req.params.userId
+    });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "ANALYTICS_ERROR",
+        message: "Failed to retrieve user analytics"
+      }
+    });
+  }
+}
+async function getAPIHealthMetrics(req, res) {
+  const startTime = Date.now();
+  try {
+    const db = admin.firestore();
+    const recentLogsSnapshot = await db.collection("calculationLogs").orderBy("timestamp", "desc").limit(100).get();
+    if (recentLogsSnapshot.empty) {
+      res.status(200).json({
+        success: true,
+        data: {
+          message: "No recent data available",
+          errorRate: 0,
+          averageResponseTime: 0
+        }
+      });
+      return;
+    }
+    const logs = recentLogsSnapshot.docs.map((doc) => doc.data());
+    const totalRequests = logs.length;
+    const errors = logs.filter((log2) => !log2.response.success);
+    const errorRate = errors.length / totalRequests;
+    const averageResponseTime = logs.reduce((sum, log2) => sum + log2.executionTime, 0) / totalRequests;
+    const errorsByType = {};
+    errors.forEach((error) => {
+      const code = error.response.error?.code || "UNKNOWN";
+      errorsByType[code] = (errorsByType[code] || 0) + 1;
+    });
+    const executionTime = Date.now() - startTime;
+    res.status(200).json({
+      success: true,
+      data: {
+        totalRequests,
+        errorCount: errors.length,
+        errorRate,
+        averageResponseTime,
+        errorsByType,
+        period: "Last 100 requests"
+      },
+      metadata: {
+        executionTime,
+        generatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    });
+  } catch (error) {
+    logger7.error("Failed to get API health metrics", error);
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "ANALYTICS_ERROR",
+        message: "Failed to retrieve API health metrics"
+      }
+    });
+  }
+}
+
 // src/api/v1/middlewares/validate.ts
-var logger4 = createLogger({ service: "ValidationMiddleware" });
+var logger8 = createLogger({ service: "ValidationMiddleware" });
 function validateRequest(schema) {
   return async (req, res, next) => {
     try {
       const validated = await schema.parseAsync(req.body);
       req.body = validated;
-      logger4.debug("Request validation successful", {
+      logger8.debug("Request validation successful", {
         path: req.path,
         method: req.method
       });
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        logger4.warn("Request validation failed", {
+        logger8.warn("Request validation failed", {
           path: req.path,
           method: req.method,
           errors: error.errors
@@ -35965,7 +36394,7 @@ function validateRequest(schema) {
         });
         return;
       }
-      logger4.error("Unexpected validation error", error, {
+      logger8.error("Unexpected validation error", error, {
         path: req.path,
         method: req.method
       });
@@ -35981,9 +36410,9 @@ function validateRequest(schema) {
 }
 
 // src/api/v1/middlewares/error.ts
-var logger5 = createLogger({ service: "error-middleware" });
+var logger9 = createLogger({ service: "error-middleware" });
 function errorHandler(err, req, res, _next) {
-  logger5.error("Request error", err, {
+  logger9.error("Request error", err, {
     path: req.path,
     method: req.method
   });
@@ -36033,40 +36462,359 @@ function asyncHandler(fn) {
 }
 
 // src/api/v1/middlewares/rateLimit.ts
-var logger6 = createLogger({ service: "rate-limit-middleware" });
-var rateLimiter = createRateLimiter(
-  API_CONFIG.RATE_LIMIT.REQUESTS_PER_HOUR,
-  API_CONFIG.RATE_LIMIT.BURST
-);
-function rateLimitMiddleware(req, res, next) {
-  const identifier = req.ip || "anonymous";
-  const result = rateLimiter.checkLimit(identifier);
-  res.setHeader("X-RateLimit-Limit", API_CONFIG.RATE_LIMIT.REQUESTS_PER_HOUR);
-  res.setHeader("X-RateLimit-Remaining", result.remaining);
-  res.setHeader("X-RateLimit-Reset", result.resetAt);
-  if (!result.allowed) {
-    logger6.warn("Rate limit exceeded", {
-      identifier,
-      retryAfter: result.retryAfter
+var admin3 = __toESM(require("firebase-admin"), 1);
+
+// src/api/v1/middlewares/auth.ts
+var admin2 = __toESM(require("firebase-admin"), 1);
+var logger10 = createLogger({ service: "AuthMiddleware" });
+async function verifyToken(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      throw new AppError(
+        "AUTH_TOKEN_MISSING",
+        "Authorization token is required",
+        401
+      );
+    }
+    const token = authHeader.substring(7);
+    const decodedToken = await admin2.auth().verifyIdToken(token);
+    const userDoc = await admin2.firestore().collection("users").doc(decodedToken.uid).get();
+    const userData = userDoc.data();
+    const role = userData?.role;
+    req.user = {
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+      role,
+      emailVerified: decodedToken.email_verified
+    };
+    logger10.debug("User authenticated", {
+      uid: req.user.uid,
+      email: req.user.email,
+      role: req.user.role
     });
-    res.setHeader("Retry-After", result.retryAfter || 60);
-    res.status(429).json({
+    next();
+  } catch (error) {
+    if (error.code === "auth/id-token-expired") {
+      logger10.warn("Expired token", { error });
+      res.status(401).json({
+        success: false,
+        error: {
+          code: "AUTH_TOKEN_EXPIRED",
+          message: "Authentication token has expired"
+        }
+      });
+      return;
+    }
+    if (error.code === "auth/argument-error") {
+      logger10.warn("Invalid token format", { error });
+      res.status(401).json({
+        success: false,
+        error: {
+          code: "AUTH_TOKEN_INVALID",
+          message: "Invalid authentication token"
+        }
+      });
+      return;
+    }
+    if (error instanceof AppError) {
+      logger10.warn("Authentication failed", { error });
+      res.status(error.statusCode).json({
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message
+        }
+      });
+      return;
+    }
+    logger10.error("Authentication error", error);
+    res.status(500).json({
       success: false,
       error: {
-        code: "RATE_LIMIT_EXCEEDED",
-        message: "Rate limit exceeded. Please try again later.",
-        details: {
-          retryAfter: result.retryAfter
-        }
+        code: "AUTH_ERROR",
+        message: "Authentication failed"
       }
     });
-    return;
   }
-  next();
+}
+function checkRole(allowedRoles) {
+  return (req, res, next) => {
+    try {
+      if (!req.user) {
+        throw new AppError(
+          "AUTH_REQUIRED",
+          "Authentication required",
+          401
+        );
+      }
+      if (!req.user.role) {
+        logger10.warn("User has no role assigned", { uid: req.user.uid });
+        res.status(403).json({
+          success: false,
+          error: {
+            code: "ROLE_NOT_ASSIGNED",
+            message: "User role not assigned. Please contact administrator."
+          }
+        });
+        return;
+      }
+      if (!allowedRoles.includes(req.user.role)) {
+        logger10.warn("Insufficient permissions", {
+          uid: req.user.uid,
+          userRole: req.user.role,
+          requiredRoles: allowedRoles
+        });
+        res.status(403).json({
+          success: false,
+          error: {
+            code: "INSUFFICIENT_PERMISSIONS",
+            message: "You do not have permission to access this resource",
+            details: {
+              requiredRoles: allowedRoles,
+              userRole: req.user.role
+            }
+          }
+        });
+        return;
+      }
+      logger10.debug("Role check passed", {
+        uid: req.user.uid,
+        role: req.user.role
+      });
+      next();
+    } catch (error) {
+      if (error instanceof AppError) {
+        res.status(error.statusCode).json({
+          success: false,
+          error: {
+            code: error.code,
+            message: error.message
+          }
+        });
+        return;
+      }
+      logger10.error("Role check error", error);
+      res.status(500).json({
+        success: false,
+        error: {
+          code: "AUTHORIZATION_ERROR",
+          message: "Authorization check failed"
+        }
+      });
+    }
+  };
+}
+async function optionalAuth(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      logger10.debug("No auth token provided, continuing as anonymous");
+      next();
+      return;
+    }
+    const token = authHeader.substring(7);
+    const decodedToken = await admin2.auth().verifyIdToken(token);
+    const userDoc = await admin2.firestore().collection("users").doc(decodedToken.uid).get();
+    const userData = userDoc.data();
+    req.user = {
+      uid: decodedToken.uid,
+      email: decodedToken.email,
+      role: userData?.role,
+      emailVerified: decodedToken.email_verified
+    };
+    logger10.debug("Optional auth - user authenticated", {
+      uid: req.user.uid,
+      role: req.user.role
+    });
+    next();
+  } catch (error) {
+    logger10.warn("Optional auth - invalid token, continuing as anonymous", {
+      error
+    });
+    next();
+  }
+}
+
+// src/api/v1/middlewares/rateLimit.ts
+var logger11 = createLogger({ service: "rate-limit-middleware" });
+var RATE_LIMITS = {
+  ["admin" /* ADMIN */]: Number.MAX_SAFE_INTEGER,
+  // Unlimited
+  ["pharmacist" /* PHARMACIST */]: 200,
+  ["pharmacy_technician" /* PHARMACY_TECHNICIAN */]: 100,
+  anonymous: 10
+  // Very limited for unauthenticated requests
+};
+async function checkUserRateLimit(userId, role) {
+  const db = admin3.firestore();
+  const activityRef = db.collection("userActivity").doc(userId);
+  try {
+    const result = await db.runTransaction(async (transaction) => {
+      const activityDoc = await transaction.get(activityRef);
+      if (!activityDoc.exists) {
+        const now2 = /* @__PURE__ */ new Date();
+        const resetAt2 = new Date(now2.getTime() + 60 * 60 * 1e3);
+        transaction.set(activityRef, {
+          userId,
+          role,
+          currentHourRequests: 1,
+          totalRequests: 1,
+          rateLimitResets: admin3.firestore.Timestamp.fromDate(resetAt2),
+          lastActiveAt: admin3.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin3.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+        const limit2 = RATE_LIMITS[role];
+        return {
+          allowed: true,
+          remaining: limit2 - 1,
+          resetAt: resetAt2
+        };
+      }
+      const data = activityDoc.data();
+      const now = /* @__PURE__ */ new Date();
+      const resetAt = data.rateLimitResets.toDate();
+      if (now >= resetAt) {
+        const newResetAt = new Date(now.getTime() + 60 * 60 * 1e3);
+        transaction.update(activityRef, {
+          currentHourRequests: 1,
+          totalRequests: admin3.firestore.FieldValue.increment(1),
+          rateLimitResets: admin3.firestore.Timestamp.fromDate(newResetAt),
+          lastActiveAt: admin3.firestore.FieldValue.serverTimestamp(),
+          updatedAt: admin3.firestore.FieldValue.serverTimestamp()
+        });
+        const limit2 = RATE_LIMITS[role];
+        return {
+          allowed: true,
+          remaining: limit2 - 1,
+          resetAt: newResetAt
+        };
+      }
+      const currentCount = data.currentHourRequests || 0;
+      const limit = RATE_LIMITS[role];
+      if (currentCount >= limit) {
+        const retryAfter = Math.ceil((resetAt.getTime() - now.getTime()) / 1e3);
+        return {
+          allowed: false,
+          remaining: 0,
+          resetAt,
+          retryAfter
+        };
+      }
+      transaction.update(activityRef, {
+        currentHourRequests: admin3.firestore.FieldValue.increment(1),
+        totalRequests: admin3.firestore.FieldValue.increment(1),
+        lastActiveAt: admin3.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin3.firestore.FieldValue.serverTimestamp()
+      });
+      return {
+        allowed: true,
+        remaining: limit - currentCount - 1,
+        resetAt
+      };
+    });
+    return result;
+  } catch (error) {
+    logger11.error("Error checking rate limit", error, { userId, role });
+    return {
+      allowed: true,
+      remaining: RATE_LIMITS[role],
+      resetAt: new Date(Date.now() + 60 * 60 * 1e3)
+    };
+  }
+}
+var anonymousLimits = /* @__PURE__ */ new Map();
+function checkAnonymousRateLimit(ip) {
+  const now = /* @__PURE__ */ new Date();
+  const limit = RATE_LIMITS.anonymous;
+  let record = anonymousLimits.get(ip);
+  if (!record || now >= record.resetAt) {
+    const resetAt = new Date(now.getTime() + 60 * 60 * 1e3);
+    record = { count: 0, resetAt };
+    anonymousLimits.set(ip, record);
+  }
+  if (record.count >= limit) {
+    const retryAfter = Math.ceil((record.resetAt.getTime() - now.getTime()) / 1e3);
+    return {
+      allowed: false,
+      remaining: 0,
+      resetAt: record.resetAt,
+      retryAfter
+    };
+  }
+  record.count++;
+  return {
+    allowed: true,
+    remaining: limit - record.count,
+    resetAt: record.resetAt
+  };
+}
+async function rateLimitMiddleware(req, res, next) {
+  try {
+    let result;
+    let limit;
+    let identifier;
+    if (req.user) {
+      identifier = req.user.uid;
+      const role = req.user.role || "pharmacy_technician" /* PHARMACY_TECHNICIAN */;
+      limit = RATE_LIMITS[role];
+      if (role === "admin" /* ADMIN */) {
+        logger11.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
+        next();
+        return;
+      }
+      result = await checkUserRateLimit(req.user.uid, role);
+      logger11.debug("User rate limit check", {
+        uid: req.user.uid,
+        role,
+        allowed: result.allowed,
+        remaining: result.remaining
+      });
+    } else {
+      identifier = req.ip || "unknown";
+      limit = RATE_LIMITS.anonymous;
+      result = checkAnonymousRateLimit(identifier);
+      logger11.debug("Anonymous rate limit check", {
+        ip: identifier,
+        allowed: result.allowed,
+        remaining: result.remaining
+      });
+    }
+    res.setHeader("X-RateLimit-Limit", limit.toString());
+    res.setHeader("X-RateLimit-Remaining", result.remaining.toString());
+    res.setHeader("X-RateLimit-Reset", result.resetAt.toISOString());
+    if (!result.allowed) {
+      logger11.warn("Rate limit exceeded", {
+        identifier,
+        retryAfter: result.retryAfter,
+        authenticated: !!req.user
+      });
+      if (result.retryAfter) {
+        res.setHeader("Retry-After", result.retryAfter.toString());
+      }
+      res.status(429).json({
+        success: false,
+        error: {
+          code: "RATE_LIMIT_EXCEEDED",
+          message: "Rate limit exceeded. Please try again later.",
+          details: {
+            limit,
+            resetAt: result.resetAt.toISOString(),
+            retryAfter: result.retryAfter
+          }
+        }
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    logger11.error("Rate limit middleware error", error);
+    next();
+  }
 }
 
 // src/api/v1/middlewares/redact.ts
-var logger7 = createLogger({ service: "redaction-middleware" });
+var logger12 = createLogger({ service: "redaction-middleware" });
 function redactionMiddleware(req, res, next) {
   const context = sanitizeLogContext({
     method: req.method,
@@ -36074,7 +36822,7 @@ function redactionMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.get("user-agent")
   });
-  logger7.info("Request received", context);
+  logger12.info("Request received", context);
   const startTime = Date.now();
   res.on("finish", () => {
     const executionTime = Date.now() - startTime;
@@ -36084,31 +36832,164 @@ function redactionMiddleware(req, res, next) {
       statusCode: res.statusCode,
       executionTime
     });
-    logger7.info("Request completed", responseContext);
+    logger12.info("Request completed", responseContext);
   });
   next();
 }
 
+// src/api/v1/middlewares/logging.ts
+var logger13 = createLogger({ service: "request-logger" });
+function getCorrelationId(req) {
+  const existingId = req.headers["x-correlation-id"] || req.headers["x-request-id"] || req.headers["x-trace-id"];
+  if (existingId && typeof existingId === "string") {
+    return existingId;
+  }
+  return generateCorrelationId();
+}
+function getGCPTraceContext(req) {
+  const traceHeader = req.headers["x-cloud-trace-context"];
+  if (!traceHeader || typeof traceHeader !== "string") {
+    return {};
+  }
+  const [trace, span] = traceHeader.split(";")[0].split("/");
+  return {
+    traceId: trace,
+    spanId: span
+  };
+}
+function redactRequestBody(body) {
+  if (!body || typeof body !== "object") {
+    return body;
+  }
+  const redacted = { ...body };
+  const sensitiveFields = [
+    "password",
+    "token",
+    "apiKey",
+    "api_key",
+    "secret",
+    "ssn",
+    "social_security_number",
+    "credit_card",
+    "creditCard"
+  ];
+  for (const field of sensitiveFields) {
+    if (field in redacted) {
+      redacted[field] = "[REDACTED]";
+    }
+  }
+  return redacted;
+}
+function loggingMiddleware(req, res, next) {
+  const startTime = Date.now();
+  const correlationId = getCorrelationId(req);
+  const { traceId, spanId } = getGCPTraceContext(req);
+  req.correlationId = correlationId;
+  req.traceId = traceId;
+  res.setHeader("X-Correlation-ID", correlationId);
+  if (traceId) {
+    res.setHeader("X-Trace-ID", traceId);
+  }
+  const logContext = {
+    correlationId,
+    traceId,
+    spanId,
+    method: req.method,
+    path: req.path,
+    userId: req.user?.uid,
+    userRole: req.user?.role,
+    ip: req.ip,
+    userAgent: req.headers["user-agent"]
+  };
+  logger13.info("Incoming request", {
+    ...logContext,
+    body: redactRequestBody(req.body),
+    query: req.query
+  });
+  const originalJson = res.json.bind(res);
+  res.json = function(body) {
+    const executionTime = Date.now() - startTime;
+    logger13.info("Outgoing response", {
+      ...logContext,
+      statusCode: res.statusCode,
+      executionTime,
+      responseSize: JSON.stringify(body).length
+    });
+    res.setHeader("X-Execution-Time", `${executionTime}ms`);
+    return originalJson(body);
+  };
+  res.on("finish", () => {
+    if (!res.headersSent || res.getHeader("Content-Type")?.toString().includes("json")) {
+      return;
+    }
+    const executionTime = Date.now() - startTime;
+    logger13.info("Request completed", {
+      ...logContext,
+      statusCode: res.statusCode,
+      executionTime
+    });
+  });
+  const originalNext = next;
+  next = function(err) {
+    if (err) {
+      const executionTime = Date.now() - startTime;
+      logger13.error("Request error", err, {
+        ...logContext,
+        executionTime,
+        errorName: err?.name,
+        errorMessage: err?.message
+      });
+    }
+    originalNext(err);
+  };
+  next();
+}
+
 // src/index.ts
-var logger8 = createLogger({ service: "functions-main" });
+var logger14 = createLogger({ service: "functions-main" });
+if (!admin4.apps.length) {
+  admin4.initializeApp();
+  logger14.info("Firebase Admin SDK initialized");
+}
 var app = (0, import_express.default)();
 app.use(helmet());
 app.use((0, import_cors.default)({ origin: getCorsOrigins() }));
 app.use(import_express.default.json());
+app.use(loggingMiddleware);
 app.use(redactionMiddleware);
 app.get("/v1/health", asyncHandler(healthCheck));
 app.post(
   "/v1/calculate",
-  rateLimitMiddleware,
+  asyncHandler(optionalAuth),
+  // Optional auth - allows both authenticated and anonymous users
+  asyncHandler(rateLimitMiddleware),
+  // Rate limiting based on auth status
   validateRequest(CalculateRequestSchema),
   asyncHandler(calculateHandler)
+);
+app.get(
+  "/v1/analytics/system",
+  asyncHandler(verifyToken),
+  checkRole(["admin" /* ADMIN */]),
+  asyncHandler(getSystemAnalytics)
+);
+app.get(
+  "/v1/analytics/users/:userId",
+  asyncHandler(verifyToken),
+  asyncHandler(getUserAnalytics)
+);
+app.get(
+  "/v1/analytics/health",
+  asyncHandler(verifyToken),
+  checkRole(["admin" /* ADMIN */]),
+  asyncHandler(getAPIHealthMetrics)
 );
 app.use(errorHandler);
 var api = functions.region("us-central1").runWith({
   memory: "512MB",
   timeoutSeconds: 60
 }).https.onRequest(app);
-logger8.info("NDC Calculator functions initialized");
+logger14.info("NDC Calculator functions initialized with authentication");
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   api

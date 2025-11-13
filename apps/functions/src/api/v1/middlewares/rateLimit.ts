@@ -3,7 +3,7 @@
  * Per-user and per-role rate limiting with Firestore tracking
  */
 
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
 import { createLogger } from '@core-guardrails';
 import * as admin from 'firebase-admin';
 import { AuthenticatedRequest, UserRole } from './auth';
