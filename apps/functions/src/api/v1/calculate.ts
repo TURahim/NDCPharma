@@ -13,7 +13,7 @@ import {
   AIInsights,
   Metadata,
 } from '@api-contracts';
-import { nameToRxCui, getNdcsForRxcui } from '@clients-rxnorm';
+import { nameToRxCui } from '@clients-rxnorm';
 import { fdaClient, type NDCPackage } from '@clients-openfda';
 import { ndcRecommender, sanitizeForAI, type NDCRecommendationRequest } from '@clients-openai';
 import { createLogger } from '@core-guardrails';
@@ -119,17 +119,17 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     
     logger.debug('Fetching NDC packages from FDA by RxCUI', { rxcui });
     
-    let allPackages: NDCPackage[];
+    // Primary: Query FDA directly by RxCUI (most reliable)
+    logger.info('Attempting FDA RxCUI search', { rxcui, limit: 100 });
+    const allPackages: NDCPackage[] = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
     
-    try {
-      // Primary: Query FDA directly by RxCUI (most reliable)
-      allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
-      
-      logger.info('Successfully retrieved packages from FDA', {
-        rxcui,
-        packageCount: allPackages.length,
-      });
-      
+    logger.info('FDA RxCUI search completed', { 
+      rxcui,
+      packageCount: allPackages?.length || 0,
+      hasResults: !!(allPackages && allPackages.length > 0),
+    });
+    
+    if (allPackages && allPackages.length > 0) {
       explanations.push({
         step: 'fetch_packages_fda',
         description: `Retrieved ${allPackages.length} NDC packages from FDA by RxCUI`,
@@ -139,35 +139,13 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
           method: 'RxCUI search',
         },
       });
-    } catch (error) {
-      // Fallback: Try RxNorm NDC list + FDA batch lookup
-      logger.warn('FDA RxCUI search failed, trying RxNorm NDC list', { 
+    } else {
+      // FDA returned no results - this shouldn't happen for valid drugs
+      logger.error('FDA RxCUI search returned no packages', {
         rxcui,
-        error: error instanceof Error ? error : new Error(String(error)),
+        drugName,
       });
-      
-      const ndcList = await getNdcsForRxcui(rxcui);
-      
-      if (ndcList.length === 0) {
-        throw new Error(`No NDC codes found for drug (RxCUI: ${rxcui})`);
-      }
-      
-      logger.info('Retrieved NDC list from RxNorm, fetching details from FDA', {
-        rxcui,
-        ndcCount: ndcList.length,
-      });
-      
-      allPackages = await fdaClient.getPackagesByNdcList(ndcList, {});
-      
-      explanations.push({
-        step: 'fetch_packages_rxnorm_fallback',
-        description: `Retrieved ${ndcList.length} NDCs from RxNorm, fetched ${allPackages.length} package details from FDA`,
-        details: {
-          rxcui,
-          source: 'RxNorm + openFDA',
-          method: 'NDC batch lookup',
-        },
-      });
+      throw new Error(`FDA has no NDC packages for RxCUI ${rxcui}. This may indicate an issue with the FDA API or the RxCUI.`);
     }
     
     if (!allPackages || allPackages.length === 0) {
