@@ -5,9 +5,11 @@
  * Shows warnings and status information about calculation results
  */
 
+import { useState } from 'react';
 import { AlertTriangle, AlertCircle, Info, CheckCircle } from 'lucide-react';
 import { CalculateResponse } from '@/types/api';
 import { cn } from '@/lib/utils';
+import { ExcludedNDCsModal } from './excluded-ndcs-modal';
 
 interface StatusIndicatorsProps {
   result: CalculateResponse | null;
@@ -15,6 +17,8 @@ interface StatusIndicatorsProps {
 }
 
 export function StatusIndicators({ result, className }: StatusIndicatorsProps) {
+  const [showExcludedModal, setShowExcludedModal] = useState(false);
+
   if (!result || !result.success || !result.data) {
     return null;
   }
@@ -63,10 +67,7 @@ export function StatusIndicators({ result, className }: StatusIndicatorsProps) {
               {data.excluded && data.excluded.length > 0 && (
                 <button
                   className="text-xs text-orange-600 hover:text-orange-700 font-medium mt-2 underline"
-                  onClick={() => {
-                    // TODO: Show modal with excluded NDCs list
-                    console.log('Excluded NDCs:', data.excluded);
-                  }}
+                  onClick={() => setShowExcludedModal(true)}
                 >
                   View {data.excluded.length} excluded NDC{data.excluded.length !== 1 ? 's' : ''}
                 </button>
@@ -119,6 +120,14 @@ export function StatusIndicators({ result, className }: StatusIndicatorsProps) {
           </div>
         </div>
       ))}
+
+      {/* Excluded NDCs Modal */}
+      {showExcludedModal && data.excluded && (
+        <ExcludedNDCsModal
+          excluded={data.excluded}
+          onClose={() => setShowExcludedModal(false)}
+        />
+      )}
     </div>
   );
 }

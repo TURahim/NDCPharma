@@ -114,6 +114,20 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
       }
     } catch (err) {
       if (err instanceof APIError) {
+        // Format user-friendly error messages
+        let errorMessage = err.message;
+        
+        // Add more context for specific error codes
+        if (err.code === 'CALCULATION_ERROR') {
+          if (err.message.includes('No results found')) {
+            errorMessage = `Could not find drug information in FDA database. Please verify the drug name is spelled correctly and includes strength (e.g., "Lisinopril 10 MG Oral Tablet").`;
+          } else if (err.message.includes('No NDC packages found')) {
+            errorMessage = `${err.message} This may occur if the drug is not available in the FDA NDC Directory or if it's a compound medication.`;
+          }
+        }
+        
+        setError(errorMessage);
+      } else if (err instanceof Error) {
         setError(err.message);
       } else {
         setError('An unexpected error occurred. Please try again.');
