@@ -29,7 +29,7 @@ const envSchema = z.object({
 
   // API Configuration
   RXNORM_BASE_URL: z.string().url().default("https://rxnav.nlm.nih.gov/REST"),
-  FDA_BASE_URL: z.string().url().default("https://api.fda.gov/drug/ndc.json"),
+  FDA_BASE_URL: z.string().url().default("https://api.fda.gov"),
   OPENAI_MODEL: z.string().default("gpt-4-turbo-preview"),
 
   // Performance Settings
