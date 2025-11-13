@@ -50,7 +50,7 @@ if (process.env.NODE_ENV !== "production") {
  */
 const envSchema = zod_1.z.object({
     // Node Environment
-    NODE_ENV: zod_1.z.enum(["development", "staging", "production"]).default("development"),
+    NODE_ENV: zod_1.z.enum(["development", "staging", "production", "test"]).default("development"),
     // Firebase Configuration
     FIREBASE_PROJECT_ID: zod_1.z.string().optional(),
     FIREBASE_REGION: zod_1.z.string().default("us-central1"),

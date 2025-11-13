@@ -1,0 +1,9 @@
+src/
+node_modules/
+esbuild.config.js
+tsconfig.json
+tests/
+*.test.ts
+*.md
+.gitignore
+

@@ -1,7 +1,7 @@
 "use strict";
 /**
  * Domain NDC Package
- * Pure business logic for quantity calculation and package matching
+ * Pure business logic for quantity calculation, package matching, and NDC validation
  */
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
@@ -21,4 +21,5 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./types"), exports);
 __exportStar(require("./quantity"), exports);
 __exportStar(require("./packageMatch"), exports);
+__exportStar(require("./validation"), exports);
 //# sourceMappingURL=index.js.map
