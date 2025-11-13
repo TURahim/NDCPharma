@@ -1,13 +1,8 @@
 {
   "buildCommand": "cd frontend && pnpm install && pnpm build",
   "outputDirectory": "frontend/.next",
-  "installCommand": "pnpm install",
-  "framework": "nextjs",
-  "regions": ["iad1"],
-  "build": {
-    "env": {
-      "NEXT_PUBLIC_API_URL": "https://us-central1-ndcpharma-8f3c6.cloudfunctions.net/api"
-    }
-  }
+  "installCommand": "cd frontend && pnpm install",
+  "framework": null,
+  "regions": ["iad1"]
 }
 
