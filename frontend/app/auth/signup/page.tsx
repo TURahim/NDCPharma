@@ -5,6 +5,9 @@ import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth"
+import { auth } from "@/lib/firebase"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -31,6 +34,7 @@ type SignUpForm = z.infer<typeof signUpSchema>
 export default function SignUpPage() {
   const [isLoading, setIsLoading] = useState(false)
   const { toast } = useToast()
+  const router = useRouter()
 
   const form = useForm<SignUpForm>({
     resolver: zodResolver(signUpSchema),
@@ -46,20 +50,48 @@ export default function SignUpPage() {
   async function onSubmit(data: SignUpForm) {
     setIsLoading(true)
     try {
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      // Create user with Firebase Authentication
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        data.email,
+        data.password
+      )
+
+      // Update user profile with display name
+      if (userCredential.user) {
+        await updateProfile(userCredential.user, {
+          displayName: data.name,
+        })
+      }
 
       toast({
         title: "Account created!",
-        description: `Welcome ${data.name}. You can now sign in.`,
+        description: `Welcome ${data.name}. Redirecting to dashboard...`,
       })
 
-      // Reset form
-      form.reset()
-    } catch (error) {
+      // Redirect to dashboard after successful signup
+      setTimeout(() => {
+        router.push('/dashboard')
+      }, 1000)
+    } catch (error: any) {
+      let errorMessage = "Please try again"
+      
+      // Handle specific Firebase errors
+      if (error.code === 'auth/email-already-in-use') {
+        errorMessage = "An account with this email already exists"
+      } else if (error.code === 'auth/invalid-email') {
+        errorMessage = "Invalid email address"
+      } else if (error.code === 'auth/weak-password') {
+        errorMessage = "Password is too weak. Please use a stronger password"
+      } else if (error.code === 'auth/network-request-failed') {
+        errorMessage = "Network error. Please check your connection"
+      } else if (error.message) {
+        errorMessage = error.message
+      }
+
       toast({
         title: "Sign up failed",
-        description: "Please try again",
+        description: errorMessage,
         variant: "destructive",
       })
     } finally {
