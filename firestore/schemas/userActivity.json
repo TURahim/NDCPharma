@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "UserActivity",
+  "description": "Firestore schema for tracking user activity and API usage (for rate limiting and analytics)",
+  "type": "object",
+  "required": ["userId", "calculationCount", "lastCalculation", "rateLimitResets"],
+  "properties": {
+    "userId": {
+      "type": "string",
+      "description": "User ID from Firebase Authentication"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "User email (for admin reference)"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["admin", "pharmacist", "pharmacy_technician"],
+      "description": "User role for RBAC"
+    },
+    "calculationCount": {
+      "type": "number",
+      "description": "Total number of calculations performed",
+      "minimum": 0
+    },
+    "lastCalculation": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp of last calculation (ISO 8601)"
+    },
+    "rateLimitResets": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When the rate limit counter resets (ISO 8601)"
+    },
+    "currentHourRequests": {
+      "type": "number",
+      "description": "Number of requests in current hour (for rate limiting)",
+      "minimum": 0
+    },
+    "totalRequests": {
+      "type": "number",
+      "description": "Total number of API requests (all time)",
+      "minimum": 0
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When this user record was created (ISO 8601)"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last update timestamp (ISO 8601)"
+    },
+    "lastActiveAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last activity timestamp (ISO 8601)"
+    },
+    "isActive": {
+      "type": "boolean",
+      "description": "Whether the user account is active"
+    },
+    "preferences": {
+      "type": "object",
+      "description": "User preferences (optional)",
+      "properties": {
+        "notifications": {
+          "type": "boolean",
+          "description": "Email notifications enabled"
+        },
+        "theme": {
+          "type": "string",
+          "enum": ["light", "dark", "auto"],
+          "description": "UI theme preference"
+        }
+      }
+    }
+  },
+  "indexes": [
+    {
+      "fields": [
+        { "fieldPath": "userId", "order": "ASCENDING" }
+      ],
+      "description": "Index for user lookup"
+    },
+    {
+      "fields": [
+        { "fieldPath": "role", "order": "ASCENDING" },
+        { "fieldPath": "lastActiveAt", "order": "DESCENDING" }
+      ],
+      "description": "Index for admin analytics (active users by role)"
+    },
+    {
+      "fields": [
+        { "fieldPath": "isActive", "order": "ASCENDING" },
+        { "fieldPath": "calculationCount", "order": "DESCENDING" }
+      ],
+      "description": "Index for top active users"
+    }
+  ],
+  "notes": {
+    "rateLimiting": {
+      "default": "100 requests/hour",
+      "pharmacist": "200 requests/hour",
+      "pharmacy_technician": "100 requests/hour",
+      "admin": "Unlimited"
+    },
+    "documentId": "Same as userId (Firebase Auth UID)",
+    "privacy": "No PHI stored - only usage metrics",
+    "retention": "Active user records kept indefinitely, inactive >1 year can be archived"
+  }
+}
+

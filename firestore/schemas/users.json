@@ -1,0 +1,84 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Users",
+  "description": "Firestore schema for user profiles and RBAC",
+  "type": "object",
+  "required": ["uid", "email", "role", "createdAt"],
+  "properties": {
+    "uid": {
+      "type": "string",
+      "description": "User ID from Firebase Authentication (same as document ID)"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "description": "User email address"
+    },
+    "role": {
+      "type": "string",
+      "enum": ["admin", "pharmacist", "pharmacy_technician"],
+      "description": "User role for RBAC"
+    },
+    "displayName": {
+      "type": "string",
+      "description": "User display name (optional)"
+    },
+    "organization": {
+      "type": "string",
+      "description": "Pharmacy or healthcare organization name (optional)"
+    },
+    "licenseNumber": {
+      "type": "string",
+      "description": "Professional license number (for pharmacists, optional)"
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Account creation timestamp (ISO 8601)"
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last profile update timestamp (ISO 8601)"
+    },
+    "emailVerified": {
+      "type": "boolean",
+      "description": "Whether email is verified"
+    },
+    "isActive": {
+      "type": "boolean",
+      "description": "Whether account is active (default: true)"
+    },
+    "lastLoginAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Last login timestamp (ISO 8601)"
+    }
+  },
+  "indexes": [
+    {
+      "fields": [
+        { "fieldPath": "email", "order": "ASCENDING" }
+      ],
+      "description": "Index for email lookup"
+    },
+    {
+      "fields": [
+        { "fieldPath": "role", "order": "ASCENDING" },
+        { "fieldPath": "isActive", "order": "ASCENDING" }
+      ],
+      "description": "Index for active users by role"
+    }
+  ],
+  "notes": {
+    "documentId": "Same as Firebase Auth UID",
+    "roles": {
+      "admin": "Full system access, can manage users and view all data",
+      "pharmacist": "Can perform calculations, view own activity",
+      "pharmacy_technician": "Can perform calculations, view own activity"
+    },
+    "privacy": "No PHI stored in user profiles",
+    "securityRules": "Users can read/update own profile (except role field)"
+  }
+}
+
