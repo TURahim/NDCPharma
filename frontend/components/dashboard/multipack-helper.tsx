@@ -63,16 +63,17 @@ export function MultiPackHelper({
         </div>
       )}
 
-      {/* Future enhancement notice */}
+      {/* Implementation status notice */}
       <div className="mt-3 pt-3 border-t border-gray-100">
         <p className="text-xs text-gray-500">
-          <span className="font-medium">Coming soon:</span> Automatic multi-pack recommendations based on quantity thresholds
+          <span className="font-medium">Status:</span> Backend integration in progress. Full feature launching Q1 2026.
         </p>
       </div>
 
-      {/* TODO: Wire to backend */}
-      {/* When enabled, pass multiPackEnabled flag to calculateNDC() API call */}
-      {/* Backend needs to implement multi-pack logic in domain-ndc package */}
+      {/* TODO: Wire to backend - Implementation plan complete (see MULTIPACK-FEATURE-PLAN.md) */}
+      {/* Phase 1: Backend algorithm (3 days) - packages/domain-ndc/src/multiPackCalculator.ts */}
+      {/* Phase 2: Frontend integration (2 days) - Wire multiPackEnabled flag to API */}
+      {/* Target: Q1 2026 */}
     </div>
   );
 }
