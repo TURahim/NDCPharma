@@ -292,3 +292,12 @@ export {
   filterActivePackages,
   sortByPackageSize,
 } from './internal/fdaMapper';
+
+// Export cached client (requires Firestore initialization)
+export {
+  CachedFDAClient,
+  cachedFdaClient,
+  initFDACache,
+  invalidateNDCLookupCache,
+  invalidateNDCDetailsCache,
+} from './cachedClient';

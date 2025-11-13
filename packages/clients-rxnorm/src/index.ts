@@ -3,7 +3,7 @@
  * Public API façade for drug normalization
  */
 
-// Public exports - simple MVP interface
+// Public exports - simple MVP interface (non-cached)
 export {
   nameToRxCui,
   rxcuiToNdcs,
@@ -12,4 +12,13 @@ export {
   type NdcInfo,
   type FetchOptions,
 } from "./facade";
+
+// Cached interface exports (requires Firestore initialization)
+export {
+  nameToRxCuiCached,
+  rxcuiToNdcsCached,
+  initRxNormCache,
+  invalidateDrugCache,
+  invalidateRxCUICache,
+} from "./cachedFacade";
 
