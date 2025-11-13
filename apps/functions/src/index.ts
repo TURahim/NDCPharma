@@ -12,10 +12,16 @@ import helmet from 'helmet';
 import { CalculateRequestSchema } from '@api-contracts';
 import { healthCheck } from './api/v1/health';
 import { calculateHandler } from './api/v1/calculate';
+import {
+  getSystemAnalytics,
+  getUserAnalytics,
+  getAPIHealthMetrics,
+} from './api/v1/analytics';
 import { validateRequest } from './api/v1/middlewares/validate';
 import { errorHandler, asyncHandler } from './api/v1/middlewares/error';
 import { rateLimitMiddleware } from './api/v1/middlewares/rateLimit';
 import { redactionMiddleware } from './api/v1/middlewares/redact';
+import { loggingMiddleware } from './api/v1/middlewares/logging';
 import { optionalAuth, verifyToken, checkRole, UserRole } from './api/v1/middlewares/auth';
 import { getCorsOrigins } from '@core-config';
 import { createLogger } from '@core-guardrails';
@@ -35,6 +41,7 @@ const app = express();
 app.use(helmet());
 app.use(cors({ origin: getCorsOrigins() }));
 app.use(express.json());
+app.use(loggingMiddleware); // Request/response logging with correlation IDs
 app.use(redactionMiddleware);
 
 // Public Routes (no authentication required)
@@ -51,21 +58,29 @@ app.post(
   asyncHandler(calculateHandler)
 );
 
-// Example: Admin-only endpoint (commented out for now)
-// app.get(
-//   '/v1/admin/users',
-//   asyncHandler(verifyToken),
-//   checkRole([UserRole.ADMIN]),
-//   asyncHandler(adminUsersHandler)
-// );
+// Analytics endpoints (require authentication)
+// System analytics (admin only)
+app.get(
+  '/v1/analytics/system',
+  asyncHandler(verifyToken),
+  checkRole([UserRole.ADMIN]),
+  asyncHandler(getSystemAnalytics)
+);
 
-// Example: Pharmacist or Admin endpoint
-// app.get(
-//   '/v1/reports',
-//   asyncHandler(verifyToken),
-//   checkRole([UserRole.PHARMACIST, UserRole.ADMIN]),
-//   asyncHandler(reportsHandler)
-// );
+// User-specific analytics (user can see own, admin can see any)
+app.get(
+  '/v1/analytics/users/:userId',
+  asyncHandler(verifyToken),
+  asyncHandler(getUserAnalytics)
+);
+
+// API health metrics (admin only)
+app.get(
+  '/v1/analytics/health',
+  asyncHandler(verifyToken),
+  checkRole([UserRole.ADMIN]),
+  asyncHandler(getAPIHealthMetrics)
+);
 
 // Error handling (must be last)
 app.use(errorHandler);

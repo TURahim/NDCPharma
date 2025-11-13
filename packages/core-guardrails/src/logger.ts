@@ -1,21 +1,52 @@
 /**
  * Structured Logging Utility
  * Provides consistent logging across the application with support for GCP Cloud Logging
+ * 
+ * Features:
+ * - Correlation IDs for distributed tracing
+ * - GCP Cloud Logging integration (structured JSON)
+ * - PHI-safe logging (use with redaction middleware)
+ * - Request/response lifecycle tracking
+ * - Error tracking with stack traces
  */
 
 import { env, LOG_LEVELS } from "@core-config";
+import { randomUUID } from "crypto";
 
 export type LogLevel = "debug" | "info" | "warn" | "error" | "critical";
 
 export interface LogContext {
   userId?: string;
   requestId?: string;
+  correlationId?: string;
+  traceId?: string;
+  spanId?: string;
   method?: string;
   path?: string;
   statusCode?: number;
   executionTime?: number;
   error?: Error;
+  service?: string;
   [key: string]: unknown;
+}
+
+/**
+ * GCP Cloud Logging severity levels
+ * Maps to: https://cloud.google.com/logging/docs/reference/v2/rest/v2/LogEntry#LogSeverity
+ */
+const GCP_SEVERITY_MAP: Record<LogLevel, string> = {
+  debug: "DEBUG",
+  info: "INFO",
+  warn: "WARNING",
+  error: "ERROR",
+  critical: "CRITICAL",
+};
+
+/**
+ * Generate a correlation ID for request tracking
+ */
+export function generateCorrelationId(): string {
+  return randomUUID();
 }
 
 /**
@@ -39,17 +70,39 @@ function shouldLog(level: LogLevel): boolean {
 
 /**
  * Format log message as structured JSON for GCP Cloud Logging
+ * Follows GCP Cloud Logging JSON format: https://cloud.google.com/logging/docs/structured-logging
  */
 function formatLogEntry(level: LogLevel, message: string, context?: LogContext) {
   const timestamp = new Date().toISOString();
-  const logEntry = {
+  
+  // GCP Cloud Logging structured format
+  const logEntry: Record<string, any> = {
     timestamp,
-    level: level.toUpperCase(),
+    severity: GCP_SEVERITY_MAP[level], // GCP-compatible severity
     message,
-    ...(context && { context }),
+    // Add GCP trace context if available
+    ...(context?.traceId && {
+      "logging.googleapis.com/trace": `projects/${env.GCP_PROJECT_ID || "ndcpharma-8f3c6"}/traces/${context.traceId}`,
+    }),
+    ...(context?.spanId && {
+      "logging.googleapis.com/spanId": context.spanId,
+    }),
+    // Add correlation/request ID for distributed tracing
+    ...(context?.correlationId && { correlationId: context.correlationId }),
+    ...(context?.requestId && { requestId: context.requestId }),
+    // Add service context
+    ...(context?.service && { serviceContext: { service: context.service } }),
+    // Add all other context
+    ...(context && { 
+      context: Object.fromEntries(
+        Object.entries(context).filter(
+          ([key]) => !["traceId", "spanId", "correlationId", "requestId", "service"].includes(key)
+        )
+      ),
+    }),
   };
 
-  // In production, use structured JSON logging
+  // In production, use structured JSON logging (for GCP Cloud Logging)
   // In development, use human-readable format
   if (env.NODE_ENV === "production") {
     return JSON.stringify(logEntry);
