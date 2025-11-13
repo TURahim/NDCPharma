@@ -63,9 +63,12 @@ export function Hero() {
       // Parse SIG
       const parsedSig = parseSig(sig);
       
-      // Prepare API request
+      // Prepare API request - include rxcui if available from autocomplete
       const apiData = {
-        drug: { name: drugInput },
+        drug: { 
+          name: drugInput,
+          ...(selectedRxcui && { rxcui: selectedRxcui })
+        },
         sig: parsedSig,
         daysSupply: parseInt(daysSupply),
       };
@@ -103,6 +106,16 @@ export function Hero() {
       }
     } catch (err) {
       if (err instanceof APIError) {
+        let errorMessage = err.message;
+        if (err.code === 'CALCULATION_ERROR') {
+          if (err.message.includes('No results found')) {
+            errorMessage = `Could not find drug information in FDA database. Please verify the drug name is spelled correctly and includes strength (e.g., "Lisinopril 10 MG Oral Tablet").`;
+          } else if (err.message.includes('No NDC packages found')) {
+            errorMessage = `${err.message} This may occur if the drug is not available in the FDA NDC Directory or if it's a compound medication.`;
+          }
+        }
+        setError(errorMessage);
+      } else if (err instanceof Error) {
         setError(err.message);
       } else {
         setError('An unexpected error occurred. Please try again.');
