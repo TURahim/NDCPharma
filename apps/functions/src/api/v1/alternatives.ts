@@ -24,7 +24,7 @@ export async function alternativesHandler(req: Request, res: Response): Promise<
   
   try {
     // Authentication check
-    // @ts-ignore - req.user is added by auth middleware
+    // @ts-expect-error - req.user is added by auth middleware
     if (!req.user) {
       res.status(401).json({
         success: false,
@@ -55,7 +55,7 @@ export async function alternativesHandler(req: Request, res: Response): Promise<
     logger.info('Finding drug alternatives', {
       drugName: drug.name,
       rxcui: drug.rxcui,
-      // @ts-ignore
+      // @ts-expect-error - req.user is added by auth middleware
       userId: req.user?.uid
     });
 

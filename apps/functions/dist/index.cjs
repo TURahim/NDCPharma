@@ -27271,7 +27271,7 @@ var init_environment = __esm({
       LOG_LEVEL: external_exports.enum(["debug", "info", "warn", "error", "critical"]).default("info"),
       ENABLE_REQUEST_LOGGING: external_exports.string().transform((val) => val === "true").default("true"),
       // Security
-      CORS_ALLOWED_ORIGINS: external_exports.string().default("http://localhost:3000"),
+      CORS_ALLOWED_ORIGINS: external_exports.string().default("http://localhost:3000,https://ndc-pharma-functions-kr3j.vercel.app"),
       JWT_EXPIRATION_HOURS: external_exports.string().transform(Number).pipe(external_exports.number().positive()).default("24"),
       // Feature Flags
       ENABLE_AI_MATCHING: external_exports.string().transform((val) => val === "true").default("true"),
@@ -51122,7 +51122,7 @@ async function alternativesHandler(req, res) {
     logger9.info("Finding drug alternatives", {
       drugName: drug.name,
       rxcui: drug.rxcui,
-      // @ts-ignore
+      // @ts-expect-error - req.user is added by auth middleware
       userId: req.user?.uid
     });
     const relatedDrugs = await getAlternativeDrugs(drug.rxcui);
