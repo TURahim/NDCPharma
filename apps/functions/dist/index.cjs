@@ -22718,13 +22718,13 @@ var require_lib3 = __commonJS({
             if (err) {
               next(err);
             } else {
-              var corsOptions = assign({}, defaults3, options);
+              var corsOptions2 = assign({}, defaults3, options);
               var originCallback = null;
-              if (corsOptions.origin && typeof corsOptions.origin === "function") {
-                originCallback = corsOptions.origin;
-              } else if (corsOptions.origin) {
+              if (corsOptions2.origin && typeof corsOptions2.origin === "function") {
+                originCallback = corsOptions2.origin;
+              } else if (corsOptions2.origin) {
                 originCallback = function(origin2, cb) {
-                  cb(null, corsOptions.origin);
+                  cb(null, corsOptions2.origin);
                 };
               }
               if (originCallback) {
@@ -22732,8 +22732,8 @@ var require_lib3 = __commonJS({
                   if (err2 || !origin2) {
                     next(err2);
                   } else {
-                    corsOptions.origin = origin2;
-                    cors2(corsOptions, req, res, next);
+                    corsOptions2.origin = origin2;
+                    cors2(corsOptions2, req, res, next);
                   }
                 });
               } else {
@@ -52050,8 +52050,24 @@ if (!admin4.apps.length) {
   logger17.info("Firebase Admin SDK initialized");
 }
 var app = (0, import_express.default)();
+var corsOptions = {
+  origin: (origin2, callback) => {
+    const allowedOrigins = getCorsOrigins();
+    if (!origin2) {
+      return callback(null, true);
+    }
+    if (allowedOrigins.includes(origin2)) {
+      return callback(null, true);
+    }
+    if (origin2.endsWith(".vercel.app")) {
+      return callback(null, true);
+    }
+    callback(new Error("Not allowed by CORS"));
+  },
+  credentials: true
+};
 app.use(helmet());
-app.use((0, import_cors.default)({ origin: getCorsOrigins() }));
+app.use((0, import_cors.default)(corsOptions));
 app.use(import_express.default.json());
 app.use(loggingMiddleware);
 app.use(redactionMiddleware);

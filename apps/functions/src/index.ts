@@ -38,9 +38,35 @@ if (!admin.apps.length) {
 // Create Express app
 const app = express();
 
+// CORS configuration with Vercel wildcard support
+const corsOptions = {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    const allowedOrigins = getCorsOrigins();
+    
+    // Allow requests with no origin (like mobile apps or curl)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // Check exact matches
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    
+    // Allow all Vercel preview/production deployments
+    if (origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    }
+    
+    // Reject other origins
+    callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+};
+
 // Global middlewares
 app.use(helmet());
-app.use(cors({ origin: getCorsOrigins() }));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(loggingMiddleware); // Request/response logging with correlation IDs
 app.use(redactionMiddleware);
