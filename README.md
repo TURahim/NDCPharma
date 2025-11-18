@@ -20,6 +20,7 @@ The **NDC Calculator** addresses critical challenges in pharmacy operations:
 | Claim rejection reduction | 50% decrease |
 | Response time | <2 seconds |
 | User satisfaction | 4.5/5+ |
+| Liquid medication support | ✅ Complete |
 
 ## 🏗️ Architecture
 
@@ -75,8 +76,11 @@ NDC/
 │   │
 │   ├── domain-ndc/                  # Business Logic (pure functions)
 │   │   ├── src/
-│   │   │   ├── quantity.ts            # Quantity calculation
-│   │   │   ├── packageMatch.ts        # Package matching
+│   │   │   ├── quantity.ts            # Quantity calculation (solid)
+│   │   │   ├── liquidCalculator.ts    # Liquid medication calculator
+│   │   │   ├── concentrationParser.ts # Concentration parsing (mg/mL)
+│   │   │   ├── packageMatch.ts        # Package matching (solid & liquid)
+│   │   │   ├── dosageForm.ts          # Dosage form detection
 │   │   │   └── types.ts                # Domain types
 │   │   └── package.json
 │   │
@@ -287,13 +291,28 @@ pnpm -r lint
 - 12 integration tests for complete flow
 - esbuild bundling for Firebase Functions
 
-✅ **PR-07: Caching Layer & Performance Optimization** ⚡ NEW
+✅ **PR-07: Caching Layer & Performance Optimization** ⚡
 - Firestore-based cache service with TTL support
 - Cache-aside pattern for RxNorm and FDA clients
 - 30 comprehensive tests (100% passing)
 - TTLs: 24h for drugs, 1h for NDCs
 - Expected performance: 85% faster (cache hit)
 - ⚠️ **REQUIRES SERVER INTEGRATION** - See [Cache Integration Guide](PR-07-CACHE-INTEGRATION-GUIDE.md)
+
+✅ **PR-11: Liquid Medication Support** 💧 NEW
+- **PR-11A**: Concentration parser (53 tests) - mg/mL, g/mL, U-100 formats
+- **PR-11B**: Liquid calculator (42 tests) + FDA integration (24 tests)
+  - mg→mL conversion with concentration ratios
+  - mL-based package selection (L→mL normalization)
+  - Dose alignment validation with warnings
+  - Formula generation for clarity
+- **PR-11C**: Backend integration (22 integration tests)
+  - Liquid vs solid medication detection
+  - Full liquid workflow (concentration → mL → bottles)
+  - Backwards compatibility (solid dosage unchanged)
+  - Enhanced explanations with liquid-specific steps
+- **Total**: 141+ new tests, 100% passing ✅
+- **Clinical Impact**: Now supports pediatric prescriptions (amoxicillin, azithromycin, etc.)
 
 ### 🔄 Planned
   
@@ -377,7 +396,7 @@ FEATURE_CACHE_ADVANCED=true  # Enable advanced caching
 **Method:** POST  
 **Description:** Calculate optimal NDC packages for prescription with full orchestration
 
-**Request Body:**
+**Request Body (Solid Dosage):**
 ```json
 {
   "drug": {
@@ -389,6 +408,22 @@ FEATURE_CACHE_ADVANCED=true  # Enable advanced caching
     "unit": "tablet"
   },
   "daysSupply": 30
+}
+```
+
+**Request Body (Liquid Medication):** 💧
+```json
+{
+  "drug": {
+    "name": "Amoxicillin",
+    "rxcui": "723"
+  },
+  "sig": {
+    "dose": 400,          // mg (not mL!)
+    "frequency": 3,       // times per day
+    "unit": "ML"          // Triggers liquid workflow
+  },
+  "daysSupply": 7
 }
 ```
 
@@ -454,6 +489,49 @@ FEATURE_CACHE_ADVANCED=true  # Enable advanced caching
 }
 ```
 
+**Liquid Medication Response** (PR-11): 💧
+```json
+{
+  "success": true,
+  "data": {
+    "drug": { "rxcui": "723", "name": "AMOXICILLIN" },
+    "totalQuantity": 168,
+    "recommendedPackages": [{
+      "ndc": "00093-4155-74",
+      "packageSize": 200,
+      "unit": "ML",
+      "dosageForm": "SUSPENSION"
+    }],
+    "liquidCalculation": {
+      "concentration": "250 MG/5 ML",
+      "mLPerDose": 8,
+      "mLPerDay": 24,
+      "totalML": 168,
+      "formula": "8 mL/dose × 3 doses/day × 7 days = 168 mL"
+    },
+    "overfillPercentage": 19,
+    "metadata": {
+      "medicationType": "liquid"
+    },
+    "explanations": [
+      {
+        "step": "concentration_detection",
+        "description": "Found concentration: 250 MG/5 ML (50 MG/ML)"
+      },
+      {
+        "step": "liquid_quantity_calculation",
+        "description": "Calculated liquid volume: 168 mL",
+        "details": {
+          "mLPerDose": 8,
+          "mLPerDay": 24,
+          "formula": "8 mL/dose × 3 doses/day × 7 days = 168 mL"
+        }
+      }
+    ]
+  }
+}
+```
+
 **Key Features**:
 - ✅ Exact match package finding
 - ✅ Waste minimization algorithm
@@ -463,6 +541,9 @@ FEATURE_CACHE_ADVANCED=true  # Enable advanced caching
 - ✅ Excluded NDC tracking
 - ✅ Low confidence alerts
 - ✅ External API failure handling
+- ✅ **Liquid medication support** (mg→mL conversion) 💧
+- ✅ **Concentration parsing** (mg/mL, g/mL, U-100) 💧
+- ✅ **Dose validation warnings** (alignment checks) 💧
 
 Full API documentation: [`packages/api-contracts/openapi.yaml`](packages/api-contracts/openapi.yaml)
 
@@ -476,7 +557,7 @@ pnpm -r coverage      # Generate coverage report
 ```
 
 ### Test Coverage (Current)
-- **Total: 316+ tests passing** (100%)
+- **Total: 457+ tests passing** (100%)
 - **PR-01**: Infrastructure setup (included in core packages)
 - **PR-02**: RxNorm client: 51 tests ✅
 - **PR-03**: 
@@ -487,11 +568,16 @@ pnpm -r coverage      # Generate coverage report
   - Quantity calculations: 28 tests ✅
   - Package matching: 43 tests ✅
   - Unit converter: 99 tests ✅ (BONUS)
-- **PR-06** (NEW):
+- **PR-06**:
   - Calculator endpoint: 10 integration tests ✅
   - Full orchestration flow: 5 tests ✅
   - Error handling: 4 tests ✅
   - Response validation: 1 test ✅
+- **PR-11** (NEW): 💧
+  - Concentration parser: 53 tests ✅
+  - Liquid calculator: 42 tests ✅
+  - FDA mapper (concentration extraction): 24 tests ✅
+  - Liquid workflow integration: 22 tests ✅
 - **Target**: >80% coverage (achieved 100%+)
 
 ### Run Specific Tests
