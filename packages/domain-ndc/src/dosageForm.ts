@@ -3,6 +3,8 @@
  * Maps various dosage form representations to normalized families
  */
 
+import { DosageFormType } from './types';
+
 export type DosageFormFamily = 'solid' | 'liquid' | 'other';
 
 /**
@@ -90,5 +92,57 @@ export function filterByDosageFormFamily<T extends { dosageForm: string }>(
     const pkgFamily = normalizeDosageForm(pkg.dosageForm);
     return pkgFamily === targetFamily;
   });
+}
+
+/**
+ * Get dosage form type (SOLID, LIQUID, INJECTABLE, SPECIAL)
+ * 
+ * @param dosageForm - Dosage form string
+ * @returns Dosage form type enum
+ */
+export function getDosageFormType(dosageForm: string): DosageFormType {
+  if (!dosageForm) {
+    return DosageFormType.SPECIAL;
+  }
+  
+  const normalized = dosageForm.toLowerCase().trim();
+  
+  // Check for solid forms
+  const solidForms = ['tablet', 'capsule', 'caplet', 'chewable', 'lozenge', 'pill'];
+  for (const form of solidForms) {
+    if (normalized.includes(form)) {
+      return DosageFormType.SOLID;
+    }
+  }
+  
+  // Check for liquid forms
+  const liquidForms = ['solution', 'suspension', 'syrup', 'elixir', 'emulsion', 'drops', 'liquid'];
+  for (const form of liquidForms) {
+    if (normalized.includes(form)) {
+      return DosageFormType.LIQUID;
+    }
+  }
+  
+  // Check for injectable forms
+  const injectableForms = ['injection', 'injectable', 'vial', 'ampule', 'syringe'];
+  for (const form of injectableForms) {
+    if (normalized.includes(form)) {
+      return DosageFormType.INJECTABLE;
+    }
+  }
+  
+  // Default to special
+  return DosageFormType.SPECIAL;
+}
+
+/**
+ * Check if dosage form is liquid or injectable (requires mL-based calculations)
+ * 
+ * @param dosageForm - Dosage form string
+ * @returns True if liquid or injectable
+ */
+export function isLiquidDosageForm(dosageForm: string): boolean {
+  const type = getDosageFormType(dosageForm);
+  return type === DosageFormType.LIQUID || type === DosageFormType.INJECTABLE;
 }
 

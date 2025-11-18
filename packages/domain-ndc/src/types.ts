@@ -69,3 +69,53 @@ export interface ConcentrationParseResult {
   warnings: string[];
 }
 
+/**
+ * Input for liquid medication calculations
+ */
+export interface LiquidCalculationInput {
+  /** Prescribed dose in milligrams */
+  prescribedDoseMg: number;
+  /** Frequency per day (e.g., 3 for TID) */
+  frequency: number;
+  /** Days supply */
+  daysSupply: number;
+  /** Concentration information */
+  concentration: Concentration;
+}
+
+/**
+ * Result of liquid medication calculation
+ */
+export interface LiquidCalculationResult {
+  /** Prescribed dose in milligrams */
+  prescribedDoseMg: number;
+  /** Concentration used for calculation */
+  concentration: Concentration;
+  /** Milliliters per dose */
+  mLPerDose: number;
+  /** Milliliters per day */
+  mLPerDay: number;
+  /** Total milliliters needed */
+  totalML: number;
+  /** Formula showing calculation steps */
+  formula: string;
+  /** Any warnings about the calculation */
+  warnings: string[];
+  /** Whether calculation is valid */
+  isValid: boolean;
+}
+
+/**
+ * Dosage form type categories
+ */
+export enum DosageFormType {
+  /** Solid dosage forms (tablets, capsules) */
+  SOLID = 'SOLID',
+  /** Liquid dosage forms (suspensions, solutions, syrups) */
+  LIQUID = 'LIQUID',
+  /** Injectable dosage forms (injections, vials) */
+  INJECTABLE = 'INJECTABLE',
+  /** Special dosage forms (patches, inhalers) */
+  SPECIAL = 'SPECIAL',
+}
+

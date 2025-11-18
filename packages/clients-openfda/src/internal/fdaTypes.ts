@@ -185,6 +185,16 @@ export interface NDCPackage {
   /** Active ingredients with strengths */
   activeIngredients: ActiveIngredient[];
   
+  /** Parsed concentration (for liquid medications) */
+  concentration?: {
+    value: number;
+    unit: string;
+    perValue: number;
+    perUnit: string;
+    ratio: number;
+    rawString: string;
+  };
+  
   /** Marketing status */
   marketingStatus: MarketingStatus;
   
