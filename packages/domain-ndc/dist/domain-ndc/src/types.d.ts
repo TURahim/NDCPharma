@@ -23,3 +23,38 @@ export interface MatchResult {
     underfillPercentage: number;
     warnings: string[];
 }
+/**
+ * Concentration information for liquid medications
+ * Represents a concentration ratio (e.g., 250 MG/5 ML)
+ */
+export interface Concentration {
+    /** Numerator value (e.g., 250) */
+    value: number;
+    /** Numerator unit (e.g., "MG") */
+    unit: string;
+    /** Denominator value (e.g., 5) */
+    perValue: number;
+    /** Denominator unit (e.g., "ML") */
+    perUnit: string;
+    /** Calculated ratio (e.g., 50 mg/mL) */
+    ratio: number;
+    /** Original string (e.g., "250 MG/5 ML") */
+    rawString: string;
+}
+/**
+ * Concentration format types
+ */
+export type ConcentrationFormat = 'mg/ml' | 'g/ml' | 'units/ml' | 'unknown';
+/**
+ * Result of concentration parsing
+ */
+export interface ConcentrationParseResult {
+    /** Whether parsing was successful */
+    success: boolean;
+    /** Parsed concentration (null if parsing failed) */
+    concentration: Concentration | null;
+    /** Detected concentration format */
+    format: ConcentrationFormat;
+    /** Any warnings during parsing */
+    warnings: string[];
+}

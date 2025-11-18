@@ -9,4 +9,5 @@ export * from "./packageMatch";
 export * from "./unitConverter";
 export * from "./validation";
 export * from "./dosageForm";
+export * from "./concentrationParser";
 
