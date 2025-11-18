@@ -14,11 +14,25 @@ exports.mapActiveIngredients = mapActiveIngredients;
 exports.parseMarketingStatus = parseMarketingStatus;
 exports.parseFDADate = parseFDADate;
 exports.extractRxCUI = extractRxCUI;
+exports.extractConcentration = extractConcentration;
 exports.filterByDosageForm = filterByDosageForm;
 exports.filterActivePackages = filterActivePackages;
 exports.sortByPackageSize = sortByPackageSize;
 exports.groupByDosageForm = groupByDosageForm;
 const _core_guardrails_1 = require("@core-guardrails");
+// Import concentration parser (will be available after domain-ndc is built)
+let parseConcentration = null;
+let isConcentrationString = null;
+// Dynamically import concentration parser to avoid circular dependencies
+try {
+    const domainNdc = require('@ndc/domain-ndc');
+    parseConcentration = domainNdc.parseConcentration;
+    isConcentrationString = domainNdc.isConcentrationString;
+}
+catch (error) {
+    // Concentration parser not available - will function without it
+    _core_guardrails_1.logger.debug('Concentration parser not available', { error: error });
+}
 /**
  * Map FDA NDC result to internal NDC package model
  * @param fdaResult FDA API result
@@ -38,6 +52,7 @@ function mapFDAResultToNDCPackage(fdaResult) {
                 route: fdaResult.route || [],
                 packageSize: parsePackageSize(packaging.description),
                 activeIngredients: mapActiveIngredients(fdaResult.active_ingredients),
+                concentration: extractConcentration(fdaResult),
                 marketingStatus: parseMarketingStatus(packaging),
                 labeler: fdaResult.labeler_name,
                 rxcui: extractRxCUI(fdaResult.openfda),
@@ -284,6 +299,53 @@ function parseFDADate(fdaDate) {
  */
 function extractRxCUI(openfda) {
     return openfda?.rxcui?.[0];
+}
+/**
+ * Extract concentration from FDA result
+ * Parses concentration from active_ingredients[0].strength
+ *
+ * @param fdaResult FDA API result
+ * @returns Parsed concentration or undefined
+ */
+function extractConcentration(fdaResult) {
+    // Check if concentration parser is available
+    if (!parseConcentration || !isConcentrationString) {
+        return undefined;
+    }
+    try {
+        // Try to extract from first active ingredient
+        const firstIngredient = fdaResult.active_ingredients?.[0];
+        if (!firstIngredient || !firstIngredient.strength) {
+            return undefined;
+        }
+        const strengthStr = firstIngredient.strength;
+        // Check if this looks like a concentration string
+        if (!isConcentrationString(strengthStr)) {
+            return undefined;
+        }
+        // Parse the concentration
+        const result = parseConcentration(strengthStr);
+        if (!result.success || !result.concentration) {
+            return undefined;
+        }
+        // Return concentration data
+        return {
+            value: result.concentration.value,
+            unit: result.concentration.unit,
+            perValue: result.concentration.perValue,
+            perUnit: result.concentration.perUnit,
+            ratio: result.concentration.ratio,
+            rawString: result.concentration.rawString,
+        };
+    }
+    catch (error) {
+        _core_guardrails_1.logger.warn('Failed to extract concentration', {
+            error: error,
+            productNdc: fdaResult.product_ndc,
+            strength: fdaResult.active_ingredients?.[0]?.strength,
+        });
+        return undefined;
+    }
 }
 /**
  * Filter NDC packages by dosage form

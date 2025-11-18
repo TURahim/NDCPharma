@@ -37,3 +37,12 @@ export declare function calculateFillPrecision(packageQuantity: number, required
     underfillPercentage: number;
     fillPrecision: 'exact' | 'overfill' | 'underfill';
 };
+/**
+ * Select liquid packages for mL-based medications
+ * Similar to chooseBestPackage but optimized for liquid volumes
+ *
+ * @param packages - Array of liquid medication packages (ML or L units)
+ * @param requiredML - Total mL needed
+ * @returns Best package selection with metadata
+ */
+export declare function selectLiquidPackages(packages: PackageCandidate[], requiredML: number): PackageSelection;

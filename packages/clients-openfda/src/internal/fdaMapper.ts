@@ -20,12 +20,12 @@ let isConcentrationString: ((input: string) => boolean) | null = null;
 
 // Dynamically import concentration parser to avoid circular dependencies
 try {
-  const concentrationParser = require('@domain-ndc/concentrationParser');
-  parseConcentration = concentrationParser.parseConcentration;
-  isConcentrationString = concentrationParser.isConcentrationString;
+  const domainNdc = require('@ndc/domain-ndc');
+  parseConcentration = domainNdc.parseConcentration;
+  isConcentrationString = domainNdc.isConcentrationString;
 } catch (error) {
   // Concentration parser not available - will function without it
-  logger.debug('Concentration parser not available', { error });
+  logger.debug('Concentration parser not available', { error: error as Error });
 }
 
 /**

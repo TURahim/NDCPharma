@@ -19,6 +19,90 @@ pnpm add @ndc/domain-ndc
 
 ## Usage
 
+### Liquid Medication Calculator
+
+Calculate total liquid volume needed for prescriptions:
+
+```typescript
+import { calculateLiquidQuantity } from '@ndc/domain-ndc';
+
+// Calculate amoxicillin suspension
+const result = calculateLiquidQuantity({
+  prescribedDoseMg: 400,        // 400 mg per dose
+  frequency: 3,                  // 3 times daily
+  daysSupply: 7,                 // 7 days
+  concentration: {
+    value: 250,
+    unit: 'MG',
+    perValue: 5,
+    perUnit: 'ML',
+    ratio: 50,  // 50 mg/mL
+    rawString: '250 MG/5 ML'
+  }
+});
+
+console.log(result);
+// {
+//   totalML: 168,           // Total volume needed
+//   mLPerDose: 8,           // 8 mL per dose
+//   mLPerDay: 24,           // 24 mL per day
+//   formula: "8 mL/dose × 3 doses/day × 7 days = 168 mL",
+//   warnings: [],
+//   isValid: true
+// }
+
+// Calculate azithromycin suspension
+const azithro = calculateLiquidQuantity({
+  prescribedDoseMg: 200,
+  frequency: 1,
+  daysSupply: 5,
+  concentration: { value: 100, unit: 'MG', perValue: 1, perUnit: 'ML', ratio: 100, rawString: '100 MG/1 ML' }
+});
+console.log(azithro.totalML);  // 10 mL
+```
+
+#### Liquid Calculation Helpers
+
+```typescript
+import {
+  convertMgToML,
+  validateLiquidDose,
+  generateLiquidFormula,
+  isReasonableLiquidVolume,
+} from '@ndc/domain-ndc';
+
+// Convert mg to mL using concentration
+convertMgToML(400, concentration);  // 8 mL (for 250 MG/5 ML concentration)
+
+// Validate dose and get warnings
+const warnings = validateLiquidDose(400, concentration, 8);
+// Returns array of warning messages if dose is unusual
+
+// Generate human-readable formula
+const formula = generateLiquidFormula(8, 3, 7, 168);
+// "8 mL/dose × 3 doses/day × 7 days = 168 mL"
+
+// Check if volume is reasonable
+isReasonableLiquidVolume(168);   // true (within 5-1000 mL range)
+isReasonableLiquidVolume(1200);  // false (exceeds 1000 mL)
+```
+
+#### Select Liquid Packages
+
+```typescript
+import { selectLiquidPackages } from '@ndc/domain-ndc';
+
+const liquidPackages = [
+  { ndc: '...', packageSize: { quantity: 75, unit: 'ML' }, dosageForm: 'SUSPENSION', ... },
+  { ndc: '...', packageSize: { quantity: 100, unit: 'ML' }, dosageForm: 'SUSPENSION', ... },
+  { ndc: '...', packageSize: { quantity: 200, unit: 'ML' }, dosageForm: 'SUSPENSION', ... },
+];
+
+const selection = selectLiquidPackages(liquidPackages, 168);
+console.log(selection.selected.packageSize.quantity);  // 200 mL (closest match)
+console.log(selection.overfillPercentage);             // 19% overfill
+```
+
 ### Concentration Parser
 
 Parse concentration strings from liquid medication data:
@@ -163,12 +247,27 @@ areUnitsCompatible('MG', 'TABLET'); // false
 ### Dosage Form Matching
 
 ```typescript
-import { normalizeDosageForm, filterByDosageFormFamily } from '@ndc/domain-ndc';
+import { 
+  normalizeDosageForm, 
+  filterByDosageFormFamily,
+  getDosageFormType,
+  isLiquidDosageForm
+} from '@ndc/domain-ndc';
 
 // Normalize dosage forms to families
 normalizeDosageForm('TABLET');     // 'solid'
 normalizeDosageForm('SUSPENSION'); // 'liquid'
 normalizeDosageForm('INJECTION');  // 'other'
+
+// Get dosage form type (enum)
+getDosageFormType('SUSPENSION');  // DosageFormType.LIQUID
+getDosageFormType('TABLET');      // DosageFormType.SOLID
+getDosageFormType('INJECTION');   // DosageFormType.INJECTABLE
+
+// Check if liquid or injectable (requires mL calculations)
+isLiquidDosageForm('SUSPENSION'); // true
+isLiquidDosageForm('INJECTION');  // true
+isLiquidDosageForm('TABLET');     // false
 
 // Filter packages by dosage form family
 const packages = [
@@ -209,6 +308,14 @@ normalizeNDC('1234567890');       // '01234-5678-90' (padded)
 
 ### Functions
 
+#### Liquid Medication Calculator
+- `calculateLiquidQuantity(input: LiquidCalculationInput): LiquidCalculationResult`
+- `convertMgToML(doseMg, concentration): number`
+- `validateLiquidDose(doseMg, concentration, mLPerDose): string[]`
+- `generateLiquidFormula(mLPerDose, frequency, daysSupply, totalML): string`
+- `validateLiquidVolume(totalML): string[]`
+- `isReasonableLiquidVolume(totalML): boolean`
+
 #### Concentration Parser
 - `parseConcentration(input: string): ConcentrationParseResult`
 - `isConcentrationString(input: string): boolean`
@@ -221,6 +328,7 @@ normalizeNDC('1234567890');       // '01234-5678-90' (padded)
 
 #### Package Selection
 - `chooseBestPackage(packages, requiredQuantity): PackageSelection`
+- `selectLiquidPackages(packages, requiredML): PackageSelection`
 - `calculateFillPrecision(packageQuantity, requiredQuantity)`
 
 #### Unit Conversion
@@ -232,6 +340,8 @@ normalizeNDC('1234567890');       // '01234-5678-90' (padded)
 
 #### Dosage Form
 - `normalizeDosageForm(form): DosageFormFamily`
+- `getDosageFormType(dosageForm): DosageFormType`
+- `isLiquidDosageForm(dosageForm): boolean`
 - `areDosageFormsCompatible(form1, form2): boolean`
 - `filterByDosageFormFamily(packages, targetForm)`
 

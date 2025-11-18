@@ -1,0 +1,104 @@
+Title:
+
+NDC Calculator Fails to Handle Liquid Medications (mg → mL Conversion, Total Volume, Concentration Parsing)
+
+Summary:
+
+Our current NDC Calculator correctly handles solid dosage forms (tablets/capsules) but fails for all liquid medications, especially pediatric antibiotics such as amoxicillin, where prescriptions are written in mg, but products are dispensed in mL.
+Because the system lacks support for concentration parsing and mg→mL conversions, it produces incorrect total quantities, incorrect package selection, and missing safety warnings.
+
+This results in inaccurate calculations and makes the tool unsafe and unusable for liquid medications.
+
+🔥 Problem Description (What’s Broken)
+
+Liquid medications (e.g., amoxicillin, azithromycin, augmentin, insulin, pediatric suspensions) have concentrations such as:
+
+250 mg / 5 mL
+
+100 mg / 1 mL
+
+1 g / 5 mL
+
+Providers prescribe mg per dose, not mL.
+Pharmacies dispense mL, not mg.
+
+Today our system does NOT:
+
+Parse concentration strings like “250 MG/5 ML”
+
+Convert mg → mL properly
+
+Calculate total volume needed across the full therapy
+
+Detect concentration mismatches
+
+Choose the correct NDC bottle size
+
+Validate that the prescribed mg dose fits the concentration
+
+Warn when concentration data is missing or incompatible
+
+Instead, the system incorrectly uses:
+
+dose × frequency × days
+
+
+This only works for tablets but is clinically invalid for liquids.
+
+Example reported by pharmacist:
+Prescription: 400 mg, 3 times daily, 7 days
+Product: 250 mg / 5 mL
+Correct calculation:
+
+400 mg ÷ 50 mg/mL = 8 mL per dose
+
+8 mL × 3 = 24 mL/day
+
+24 × 7 = 168 mL total
+Our system currently cannot compute this.
+
+This leads to unsafe outputs and incorrect NDC recommendations.
+
+🎯 Why This Is a Critical Issue
+
+Liquid antibiotics are among the most commonly dispensed medications
+
+Pediatric dosing errors are a top pharmacy risk
+
+Pharmacists explicitly flagged this as a major gap
+
+Our NDC calculator is currently unusable for liquid medications
+
+We cannot support pediatric prescriptions without this fix
+
+Insurance and compliance require accurate and validated quantity calculations
+
+This is a blocker for clinical correctness.
+
+📌 Definition of Done (Problem-Side Only)
+
+(Not the solution – only what must be addressed.)
+
+A complete fix requires that the system is able to:
+
+Correctly interpret concentrations (mg/mL) from FDA NDC data
+
+Convert prescribed mg dose into mL per dose
+
+Calculate total mL needed based on frequency and day supply
+
+Validate prescribed dose against available concentration
+
+Select appropriate bottle size(s) that meet or exceed total mL
+
+Provide warnings for:
+
+missing concentration
+
+incompatible dose
+
+unsafe or ambiguous conversions
+
+Generate accurate explanations for all liquid calculations
+
+Maintain backwards compatibility with solid dosage workflows

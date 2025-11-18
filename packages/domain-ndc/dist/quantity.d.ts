@@ -1,43 +1,29 @@
 /**
- * Quantity Calculation Logic
- * Pure functions for calculating required medication quantities
- * MVP: Solids only (tablets, capsules)
+ * Quantity Calculation Utilities
+ * Handles total quantity computation with unit conversions
  */
-/**
- * Calculate total quantity needed based on prescription
- * Formula: dose × frequency × days' supply
- *
- * MVP: Structured input only, defer free-text SIG parsing
- *
- * @param prescription - Prescription details
- * @returns Total quantity needed
- */
-export declare function calculateTotalQuantity(prescription: {
-    /**
-     * Dose per administration (e.g., 2 tablets)
-     */
-    dosePerAdministration: number;
-    /**
-     * Frequency per day (e.g., 2 for twice daily)
-     */
-    frequencyPerDay: number;
-    /**
-     * Days' supply
-     */
-    daysSupply: number;
-}): number;
-/**
- * Parse structured SIG input (MVP scope)
- *
- * @param sig - Structured SIG object
- * @returns Parsed dose and frequency
- */
-export declare function parseStructuredSIG(sig: {
+export interface SIGInput {
     dose: number;
     frequency: number;
     unit: string;
-}): {
-    dosePerAdministration: number;
-    frequencyPerDay: number;
-    unit: string;
-};
+}
+export interface DrugStrength {
+    strength?: string;
+    dosageForm?: string;
+}
+export interface QuantityResult {
+    totalQuantity: number;
+    warnings: string[];
+    details?: {
+        method: 'direct' | 'strength_conversion' | 'concentration_conversion';
+        calculation: string;
+    };
+}
+/**
+ * Compute total quantity needed for prescription
+ * @param sig - Prescription SIG (dose, frequency, unit)
+ * @param drugStrength - Drug strength information
+ * @param daysSupply - Number of days supply
+ * @returns Quantity result with warnings
+ */
+export declare function computeTotalQuantity(sig: SIGInput, drugStrength: DrugStrength, daysSupply: number): QuantityResult;

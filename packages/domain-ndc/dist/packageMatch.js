@@ -1,124 +1,186 @@
 "use strict";
 /**
- * Package Matching Logic
- * Pure functions for matching quantities to packages and computing over/underfill
+ * Package Selection and Matching Utilities
+ * Implements MVP-safe package selection logic
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.matchPackagesToQuantity = matchPackagesToQuantity;
-exports.calculateOverfill = calculateOverfill;
-exports.calculateUnderfill = calculateUnderfill;
+exports.chooseBestPackage = chooseBestPackage;
+exports.calculateFillPrecision = calculateFillPrecision;
+exports.selectLiquidPackages = selectLiquidPackages;
 /**
- * Match required quantity to available packages
- * Prefers exact match, ≤5% overfill, else shows top-3 combinations
+ * Choose the best package for the required quantity
+ * MVP approach: Single package only, minimal overfill
  *
+ * @param packages - Array of available packages (should be pre-filtered for active status)
  * @param requiredQuantity - Total quantity needed
- * @param availablePackages - Array of available packages
- * @returns Match result with recommendations
+ * @returns Best package selection with metadata
  */
-function matchPackagesToQuantity(requiredQuantity, availablePackages) {
-    if (requiredQuantity <= 0) {
-        throw new Error("Required quantity must be positive");
+function chooseBestPackage(packages, requiredQuantity) {
+    const warnings = [];
+    if (packages.length === 0) {
+        throw new Error('No packages available for selection');
     }
-    if (availablePackages.length === 0) {
-        throw new Error("No packages available");
-    }
-    // Filter to active packages only
-    const activePackages = availablePackages.filter(p => p.isActive);
-    if (activePackages.length === 0) {
-        return {
-            recommendedPackages: [],
-            totalQuantity: 0,
-            overfillPercentage: 0,
-            underfillPercentage: 0,
-            warnings: ["No active packages available"],
-        };
-    }
-    // Sort packages by size (ascending)
-    const sortedPackages = [...activePackages].sort((a, b) => a.packageSize - b.packageSize);
-    // Try to find exact match
-    const exactMatch = sortedPackages.find(p => p.packageSize === requiredQuantity);
+    // Sort packages by size ascending
+    const sortedPackages = [...packages].sort((a, b) => a.packageSize.quantity - b.packageSize.quantity);
+    // Strategy 1: Find exact match
+    const exactMatch = sortedPackages.find(pkg => pkg.packageSize.quantity === requiredQuantity);
     if (exactMatch) {
         return {
-            recommendedPackages: [exactMatch],
-            totalQuantity: exactMatch.packageSize,
+            selected: exactMatch,
             overfillPercentage: 0,
             underfillPercentage: 0,
             warnings: [],
+            explanation: `Exact match: ${exactMatch.packageSize.quantity} ${exactMatch.packageSize.unit} package meets requirement perfectly`,
         };
     }
-    // Try to find package with ≤5% overfill
-    for (const pkg of sortedPackages) {
-        if (pkg.packageSize >= requiredQuantity) {
-            const overfill = ((pkg.packageSize - requiredQuantity) / requiredQuantity) * 100;
-            if (overfill <= 5) {
-                return {
-                    recommendedPackages: [pkg],
-                    totalQuantity: pkg.packageSize,
-                    overfillPercentage: overfill,
-                    underfillPercentage: 0,
-                    warnings: [],
-                };
-            }
+    // Strategy 2: Find smallest package that meets or exceeds requirement
+    const adequatePackage = sortedPackages.find(pkg => pkg.packageSize.quantity >= requiredQuantity);
+    if (adequatePackage) {
+        const overfill = adequatePackage.packageSize.quantity - requiredQuantity;
+        const overfillPct = (overfill / requiredQuantity) * 100;
+        if (overfillPct > 20) {
+            warnings.push(`Significant overfill: ${overfillPct.toFixed(1)}% (${overfill} extra ${adequatePackage.packageSize.unit}). ` +
+                `Patient will have leftover medication. Consider discussing with prescriber.`);
         }
-    }
-    // Find best single package (minimum overfill)
-    const bestSingle = sortedPackages
-        .filter(p => p.packageSize >= requiredQuantity)
-        .reduce((best, current) => {
-        if (!best)
-            return current;
-        const currentOverfill = current.packageSize - requiredQuantity;
-        const bestOverfill = best.packageSize - requiredQuantity;
-        return currentOverfill < bestOverfill ? current : best;
-    }, null);
-    if (bestSingle) {
-        const overfill = ((bestSingle.packageSize - requiredQuantity) / requiredQuantity) * 100;
         return {
-            recommendedPackages: [bestSingle],
-            totalQuantity: bestSingle.packageSize,
-            overfillPercentage: overfill,
+            selected: adequatePackage,
+            overfillPercentage: overfillPct,
             underfillPercentage: 0,
-            warnings: overfill > 10 ? [`Overfill exceeds 10% (${overfill.toFixed(1)}%)`] : [],
+            warnings,
+            explanation: `Selected ${adequatePackage.packageSize.quantity} ${adequatePackage.packageSize.unit} package ` +
+                `(smallest available that meets ${requiredQuantity} ${adequatePackage.packageSize.unit} requirement)`,
         };
     }
-    // No single package works - would need combination logic (future PR)
+    // Strategy 3: No package large enough - select largest available
+    const largestPackage = sortedPackages[sortedPackages.length - 1];
+    const underfill = requiredQuantity - largestPackage.packageSize.quantity;
+    const underfillPct = (underfill / requiredQuantity) * 100;
+    warnings.push(`No package meets required quantity. Largest available is ${largestPackage.packageSize.quantity} ${largestPackage.packageSize.unit}. ` +
+        `Underfill: ${underfillPct.toFixed(1)}% (${underfill} ${largestPackage.packageSize.unit} short). ` +
+        `Patient will need early refill.`);
     return {
-        recommendedPackages: [],
-        totalQuantity: 0,
+        selected: largestPackage,
         overfillPercentage: 0,
-        underfillPercentage: 0,
-        warnings: ["No suitable package found. Multi-package combinations not yet implemented."],
+        underfillPercentage: underfillPct,
+        warnings,
+        explanation: `Selected largest available package: ${largestPackage.packageSize.quantity} ${largestPackage.packageSize.unit} ` +
+            `(underfills requirement of ${requiredQuantity} ${largestPackage.packageSize.unit})`,
     };
 }
 /**
- * Calculate overfill percentage
- *
- * @param dispensed - Quantity being dispensed
- * @param required - Quantity required
- * @returns Overfill percentage
+ * Calculate overfill/underfill percentages for a single package
  */
-function calculateOverfill(dispensed, required) {
-    if (required <= 0) {
-        throw new Error("Required quantity must be positive");
+function calculateFillPrecision(packageQuantity, requiredQuantity) {
+    if (packageQuantity === requiredQuantity) {
+        return {
+            overfillPercentage: 0,
+            underfillPercentage: 0,
+            fillPrecision: 'exact',
+        };
     }
-    if (dispensed < required) {
-        return 0; // No overfill if underfilled
+    if (packageQuantity > requiredQuantity) {
+        const overfill = ((packageQuantity - requiredQuantity) / requiredQuantity) * 100;
+        return {
+            overfillPercentage: overfill,
+            underfillPercentage: 0,
+            fillPrecision: 'overfill',
+        };
     }
-    return ((dispensed - required) / required) * 100;
+    const underfill = ((requiredQuantity - packageQuantity) / requiredQuantity) * 100;
+    return {
+        overfillPercentage: 0,
+        underfillPercentage: underfill,
+        fillPrecision: 'underfill',
+    };
 }
 /**
- * Calculate underfill percentage
+ * Select liquid packages for mL-based medications
+ * Similar to chooseBestPackage but optimized for liquid volumes
  *
- * @param dispensed - Quantity being dispensed
- * @param required - Quantity required
- * @returns Underfill percentage
+ * @param packages - Array of liquid medication packages (ML or L units)
+ * @param requiredML - Total mL needed
+ * @returns Best package selection with metadata
  */
-function calculateUnderfill(dispensed, required) {
-    if (required <= 0) {
-        throw new Error("Required quantity must be positive");
+function selectLiquidPackages(packages, requiredML) {
+    const warnings = [];
+    if (packages.length === 0) {
+        throw new Error('No liquid packages available for selection');
     }
-    if (dispensed >= required) {
-        return 0; // No underfill if overfilled or exact
+    // Normalize all packages to mL
+    const normalizedPackages = packages.map(pkg => {
+        let quantityML = pkg.packageSize.quantity;
+        const unit = pkg.packageSize.unit.toUpperCase();
+        // Convert liters to milliliters
+        if (unit === 'L' || unit === 'LITER' || unit === 'LITERS') {
+            quantityML = pkg.packageSize.quantity * 1000;
+        }
+        return {
+            ...pkg,
+            normalizedQuantityML: quantityML,
+        };
+    });
+    // Sort by normalized quantity ascending
+    const sortedPackages = [...normalizedPackages].sort((a, b) => a.normalizedQuantityML - b.normalizedQuantityML);
+    // Strategy 1: Find exact match (within 1 mL tolerance for rounding)
+    const exactMatch = sortedPackages.find(pkg => Math.abs(pkg.normalizedQuantityML - requiredML) < 1);
+    if (exactMatch) {
+        return {
+            selected: exactMatch,
+            overfillPercentage: 0,
+            underfillPercentage: 0,
+            warnings: [],
+            explanation: `Exact match: ${exactMatch.packageSize.quantity} ${exactMatch.packageSize.unit} bottle meets requirement`,
+        };
     }
-    return ((required - dispensed) / required) * 100;
+    // Strategy 2: Find smallest package with minimal overfill (within 10%)
+    const minimalOverfillPackage = sortedPackages.find(pkg => {
+        const overfill = pkg.normalizedQuantityML - requiredML;
+        const overfillPct = (overfill / requiredML) * 100;
+        return overfill > 0 && overfillPct <= 10;
+    });
+    if (minimalOverfillPackage) {
+        const overfill = minimalOverfillPackage.normalizedQuantityML - requiredML;
+        const overfillPct = (overfill / requiredML) * 100;
+        return {
+            selected: minimalOverfillPackage,
+            overfillPercentage: overfillPct,
+            underfillPercentage: 0,
+            warnings,
+            explanation: `Selected ${minimalOverfillPackage.packageSize.quantity} ${minimalOverfillPackage.packageSize.unit} bottle ` +
+                `(${overfillPct.toFixed(1)}% overfill, within acceptable range)`,
+        };
+    }
+    // Strategy 3: Find any package that meets requirement
+    const adequatePackage = sortedPackages.find(pkg => pkg.normalizedQuantityML >= requiredML);
+    if (adequatePackage) {
+        const overfill = adequatePackage.normalizedQuantityML - requiredML;
+        const overfillPct = (overfill / requiredML) * 100;
+        if (overfillPct > 20) {
+            warnings.push(`Significant overfill: ${overfillPct.toFixed(1)}% (${overfill.toFixed(1)} mL extra). ` +
+                `Patient will have leftover medication. Consider discussing with prescriber.`);
+        }
+        return {
+            selected: adequatePackage,
+            overfillPercentage: overfillPct,
+            underfillPercentage: 0,
+            warnings,
+            explanation: `Selected ${adequatePackage.packageSize.quantity} ${adequatePackage.packageSize.unit} bottle ` +
+                `(smallest available that meets ${requiredML.toFixed(1)} mL requirement)`,
+        };
+    }
+    // Strategy 4: No single package large enough - select largest and warn
+    const largestPackage = sortedPackages[sortedPackages.length - 1];
+    const underfill = requiredML - largestPackage.normalizedQuantityML;
+    const underfillPct = (underfill / requiredML) * 100;
+    warnings.push(`No single bottle meets required volume. Largest available is ${largestPackage.packageSize.quantity} ${largestPackage.packageSize.unit}. ` +
+        `Underfill: ${underfillPct.toFixed(1)}% (${underfill.toFixed(1)} mL short). ` +
+        `May require multiple bottles or patient will need early refill.`);
+    return {
+        selected: largestPackage,
+        overfillPercentage: 0,
+        underfillPercentage: underfillPct,
+        warnings,
+        explanation: `Selected largest available bottle: ${largestPackage.packageSize.quantity} ${largestPackage.packageSize.unit} ` +
+            `(underfills requirement of ${requiredML.toFixed(1)} mL)`,
+    };
 }

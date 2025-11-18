@@ -49,6 +49,11 @@ export declare class RxNormService {
         };
     }>;
     /**
+     * Get all related information for an RxCUI
+     * GET /rxcui/{rxcui}/allrelated.json?tty={tty}
+     */
+    getAllRelatedInfo(rxcui: RxCUI, termTypes?: string[]): Promise<any>;
+    /**
      * Execute API request with retry logic
      */
     private executeWithRetry;

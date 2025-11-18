@@ -73,6 +73,14 @@ export declare function parseFDADate(fdaDate?: string): string | undefined;
  */
 export declare function extractRxCUI(openfda: any): string | undefined;
 /**
+ * Extract concentration from FDA result
+ * Parses concentration from active_ingredients[0].strength
+ *
+ * @param fdaResult FDA API result
+ * @returns Parsed concentration or undefined
+ */
+export declare function extractConcentration(fdaResult: FDANDCResult): NDCPackage['concentration'] | undefined;
+/**
  * Filter NDC packages by dosage form
  * @param packages Array of NDC packages
  * @param dosageForm Desired dosage form (e.g., "TABLET", "CAPSULE")
