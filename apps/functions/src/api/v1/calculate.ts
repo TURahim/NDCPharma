@@ -23,7 +23,11 @@ import {
   chooseBestPackage, 
   calculateFillPrecision,
   filterByDosageFormFamily,
-  type PackageCandidate 
+  isLiquidDosageForm,
+  calculateLiquidQuantity,
+  selectLiquidPackages,
+  type PackageCandidate,
+  type LiquidCalculationInput 
 } from '@domain-ndc';
 
 const logger = createLogger({ service: 'CalculateEndpoint' });
@@ -237,106 +241,265 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     );
 
     // ==========================================
-    // STEP 4: Calculate total quantity needed (with unit conversion)
+    // STEP 3.5: Detect medication type (liquid vs solid)
     // ==========================================
-    const quantityResult = computeTotalQuantity(
-      request.sig,
-      { strength, dosageForm },
-      request.daysSupply
-    );
+    const isLiquid = isLiquidMedication(sortedPackages, request.sig.unit);
     
-    const totalQuantity = quantityResult.totalQuantity;
-    
-    // Add any quantity calculation warnings
-    warnings.push(...quantityResult.warnings);
-    
-    logger.info('Calculated total quantity', {
-      dose: request.sig.dose,
-      frequency: request.sig.frequency,
-      daysSupply: request.daysSupply,
-      totalQuantity,
-      method: quantityResult.details?.method,
+    logger.info('Medication type detected', {
+      isLiquid,
+      requestedUnit: request.sig.unit,
+      packageCount: sortedPackages.length,
     });
     
     explanations.push({
-      step: 'quantity_calculation',
-      description: quantityResult.details?.calculation || 
-        `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
+      step: 'medication_type_detection',
+      description: `Detected as ${isLiquid ? 'liquid' : 'solid'} medication`,
       details: {
-        method: quantityResult.details?.method || 'direct',
+        type: isLiquid ? 'liquid' : 'solid',
+        requestedUnit: request.sig.unit,
+        hasConcentrationData: sortedPackages.some(pkg => pkg.concentration !== undefined),
+      },
+    });
+
+    // ==========================================
+    // STEP 4 & 5: Calculate quantity and select package (routes to liquid or solid logic)
+    // ==========================================
+    
+    let totalQuantity: number;
+    let overfillPercentage: number;
+    let underfillPercentage: number;
+    let recommendedPackages: PackageRecommendation[];
+    let liquidCalculationDetails: any; // For liquid-specific details
+    
+    if (isLiquid) {
+      // ==========================================
+      // LIQUID MEDICATION PATH
+      // ==========================================
+      
+      // Find package with concentration data
+      const packageWithConcentration = sortedPackages.find(pkg => pkg.concentration !== undefined);
+      
+      if (!packageWithConcentration || !packageWithConcentration.concentration) {
+        throw new Error('Liquid medication detected but no concentration data available. Cannot calculate liquid quantity.');
+      }
+      
+      const concentration = packageWithConcentration.concentration;
+      
+      logger.info('Using concentration for liquid calculation', {
+        concentration: concentration.rawString,
+        ratio: concentration.ratio,
+      });
+      
+      explanations.push({
+        step: 'concentration_detection',
+        description: `Found concentration: ${concentration.rawString} (${concentration.ratio} ${concentration.unit}/${concentration.perUnit})`,
+        details: {
+          concentration: concentration.rawString,
+          ratio: concentration.ratio,
+        },
+      });
+      
+      // Calculate liquid quantity (mg -> mL conversion)
+      const liquidInput: LiquidCalculationInput = {
+        prescribedDoseMg: request.sig.dose,
+        frequency: request.sig.frequency,
+        daysSupply: request.daysSupply,
+        concentration,
+      };
+      
+      const liquidResult = calculateLiquidQuantity(liquidInput);
+      
+      if (!liquidResult.isValid) {
+        warnings.push(`Liquid calculation generated warnings: ${liquidResult.warnings.join('; ')}`);
+      }
+      
+      totalQuantity = liquidResult.totalML;
+      liquidCalculationDetails = liquidResult;
+      
+      logger.info('Calculated liquid quantity', {
+        prescribedDoseMg: request.sig.dose,
+        mLPerDose: liquidResult.mLPerDose,
+        totalML: liquidResult.totalML,
+        formula: liquidResult.formula,
+      });
+      
+      explanations.push({
+        step: 'liquid_quantity_calculation',
+        description: `Calculated liquid volume: ${liquidResult.totalML} mL`,
+        details: {
+          prescribedDoseMg: request.sig.dose,
+          concentration: concentration.rawString,
+          mLPerDose: liquidResult.mLPerDose,
+          mLPerDay: liquidResult.mLPerDay,
+          totalML: liquidResult.totalML,
+          formula: liquidResult.formula,
+        },
+      });
+      
+      // Add liquid-specific warnings
+      warnings.push(...liquidResult.warnings);
+      
+      // Select liquid package (mL-based selection)
+      const packageCandidates: PackageCandidate[] = sortedPackages.map(pkg => ({
+        ndc: pkg.ndc,
+        packageSize: {
+          quantity: pkg.packageSize.quantity,
+          unit: pkg.packageSize.unit,
+        },
+        dosageForm: pkg.dosageForm,
+        marketingStatus: typeof pkg.marketingStatus === 'object' 
+          ? pkg.marketingStatus.status 
+          : 'unknown',
+        isActive: typeof pkg.marketingStatus === 'object' 
+          ? pkg.marketingStatus.isActive 
+          : false,
+        labelerName: pkg.labeler,
+      }));
+      
+      const liquidSelection = selectLiquidPackages(packageCandidates, totalQuantity);
+      
+      overfillPercentage = liquidSelection.overfillPercentage;
+      underfillPercentage = liquidSelection.underfillPercentage;
+      
+      warnings.push(...liquidSelection.warnings);
+      
+      logger.info('Selected liquid package', {
+        ndc: liquidSelection.selected.ndc,
+        packageSize: liquidSelection.selected.packageSize.quantity,
+        unit: liquidSelection.selected.packageSize.unit,
+        overfillPercentage,
+        underfillPercentage,
+      });
+      
+      explanations.push({
+        step: 'liquid_package_selection',
+        description: liquidSelection.explanation,
+        details: {
+          ndc: liquidSelection.selected.ndc,
+          packageSize: liquidSelection.selected.packageSize.quantity,
+          unit: liquidSelection.selected.packageSize.unit,
+          requiredML: totalQuantity,
+          overfill: overfillPercentage,
+          underfill: underfillPercentage,
+        },
+      });
+      
+      const fillMetrics = calculateFillPrecision(
+        liquidSelection.selected.packageSize.quantity,
+        totalQuantity
+      );
+      
+      recommendedPackages = [{
+        ndc: liquidSelection.selected.ndc,
+        packageSize: liquidSelection.selected.packageSize.quantity,
+        unit: liquidSelection.selected.packageSize.unit,
+        dosageForm: liquidSelection.selected.dosageForm,
+        marketingStatus: liquidSelection.selected.marketingStatus,
+        isActive: liquidSelection.selected.isActive,
+        quantityNeeded: liquidSelection.selected.packageSize.quantity,
+        fillPrecision: fillMetrics.fillPrecision,
+      }];
+      
+    } else {
+      // ==========================================
+      // SOLID MEDICATION PATH (existing logic)
+      // ==========================================
+      
+      const quantityResult = computeTotalQuantity(
+        request.sig,
+        { strength, dosageForm },
+        request.daysSupply
+      );
+      
+      totalQuantity = quantityResult.totalQuantity;
+      
+      // Add any quantity calculation warnings
+      warnings.push(...quantityResult.warnings);
+      
+      logger.info('Calculated total quantity', {
         dose: request.sig.dose,
         frequency: request.sig.frequency,
         daysSupply: request.daysSupply,
-        result: totalQuantity,
-      },
-    });
-
-    // ==========================================
-    // STEP 5: Select optimal package (MVP: Single package only)
-    // ==========================================
-    
-    // Convert NDCPackages to PackageCandidate format
-    const packageCandidates: PackageCandidate[] = sortedPackages.map(pkg => ({
-      ndc: pkg.ndc,
-      packageSize: {
-        quantity: pkg.packageSize.quantity,
-        unit: pkg.packageSize.unit,
-      },
-      dosageForm: pkg.dosageForm,
-      marketingStatus: typeof pkg.marketingStatus === 'object' 
-        ? pkg.marketingStatus.status 
-        : 'unknown',
-      isActive: typeof pkg.marketingStatus === 'object' 
-        ? pkg.marketingStatus.isActive 
-        : false,
-      labelerName: pkg.labeler,
-    }));
-    
-    // Use smart package selection algorithm
-    const selection = chooseBestPackage(packageCandidates, totalQuantity);
-    
-    // Add any selection warnings
-    warnings.push(...selection.warnings);
-    
-    const overfillPercentage = selection.overfillPercentage;
-    const underfillPercentage = selection.underfillPercentage;
-    
-    logger.info('Selected package', {
-      ndc: selection.selected.ndc,
-      packageSize: selection.selected.packageSize.quantity,
-      overfillPercentage,
-      underfillPercentage,
-    });
-    
-    explanations.push({
-      step: 'package_selection',
-      description: selection.explanation,
-      details: {
+        totalQuantity,
+        method: quantityResult.details?.method,
+      });
+      
+      explanations.push({
+        step: 'quantity_calculation',
+        description: quantityResult.details?.calculation || 
+          `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
+        details: {
+          method: quantityResult.details?.method || 'direct',
+          dose: request.sig.dose,
+          frequency: request.sig.frequency,
+          daysSupply: request.daysSupply,
+          result: totalQuantity,
+        },
+      });
+      
+      // Convert NDCPackages to PackageCandidate format
+      const packageCandidates: PackageCandidate[] = sortedPackages.map(pkg => ({
+        ndc: pkg.ndc,
+        packageSize: {
+          quantity: pkg.packageSize.quantity,
+          unit: pkg.packageSize.unit,
+        },
+        dosageForm: pkg.dosageForm,
+        marketingStatus: typeof pkg.marketingStatus === 'object' 
+          ? pkg.marketingStatus.status 
+          : 'unknown',
+        isActive: typeof pkg.marketingStatus === 'object' 
+          ? pkg.marketingStatus.isActive 
+          : false,
+        labelerName: pkg.labeler,
+      }));
+      
+      // Use smart package selection algorithm
+      const selection = chooseBestPackage(packageCandidates, totalQuantity);
+      
+      // Add any selection warnings
+      warnings.push(...selection.warnings);
+      
+      overfillPercentage = selection.overfillPercentage;
+      underfillPercentage = selection.underfillPercentage;
+      
+      logger.info('Selected package', {
         ndc: selection.selected.ndc,
         packageSize: selection.selected.packageSize.quantity,
-        requiredQuantity: totalQuantity,
-        overfill: overfillPercentage,
-        underfill: underfillPercentage,
-      },
-    });
-
-    // Calculate precise fill metrics
-    const fillMetrics = calculateFillPrecision(
-      selection.selected.packageSize.quantity,
-      totalQuantity
-    );
-    
-    // Format recommendation
-    const recommendedPackages: PackageRecommendation[] = [{
-      ndc: selection.selected.ndc,
-      packageSize: selection.selected.packageSize.quantity,
-      unit: selection.selected.packageSize.unit,
-      dosageForm: selection.selected.dosageForm,
-      marketingStatus: selection.selected.marketingStatus,
-      isActive: selection.selected.isActive,
-      quantityNeeded: selection.selected.packageSize.quantity,
-      fillPrecision: fillMetrics.fillPrecision,
-    }];
+        overfillPercentage,
+        underfillPercentage,
+      });
+      
+      explanations.push({
+        step: 'package_selection',
+        description: selection.explanation,
+        details: {
+          ndc: selection.selected.ndc,
+          packageSize: selection.selected.packageSize.quantity,
+          requiredQuantity: totalQuantity,
+          overfill: overfillPercentage,
+          underfill: underfillPercentage,
+        },
+      });
+      
+      // Calculate precise fill metrics
+      const fillMetrics = calculateFillPrecision(
+        selection.selected.packageSize.quantity,
+        totalQuantity
+      );
+      
+      // Format recommendation
+      recommendedPackages = [{
+        ndc: selection.selected.ndc,
+        packageSize: selection.selected.packageSize.quantity,
+        unit: selection.selected.packageSize.unit,
+        dosageForm: selection.selected.dosageForm,
+        marketingStatus: selection.selected.marketingStatus,
+        isActive: selection.selected.isActive,
+        quantityNeeded: selection.selected.packageSize.quantity,
+        fillPrecision: fillMetrics.fillPrecision,
+      }];
+    }
 
     // ==========================================
     // STEP 6: AI Enhancement (Optional - Annotation Only)
@@ -490,7 +653,20 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
         excluded: excluded.length > 0 ? excluded : undefined,
         explanations,
         aiInsights,
-        metadata,
+        metadata: {
+          ...metadata,
+          medicationType: isLiquid ? 'liquid' : 'solid',
+        },
+        // Add liquid-specific details if this is a liquid medication
+        ...(isLiquid && liquidCalculationDetails ? {
+          liquidCalculation: {
+            concentration: liquidCalculationDetails.concentration.rawString,
+            mLPerDose: liquidCalculationDetails.mLPerDose,
+            mLPerDay: liquidCalculationDetails.mLPerDay,
+            totalML: liquidCalculationDetails.totalML,
+            formula: liquidCalculationDetails.formula,
+          },
+        } : {}),
       },
     };
 
@@ -514,4 +690,31 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
 
     res.status(500).json(response);
   }
+}
+
+/**
+ * Detect if this is a liquid medication based on packages and dosage form
+ * @param packages Available NDC packages
+ * @param requestedDosageForm Dosage form from request (e.g., "ML")
+ * @returns true if liquid medication
+ */
+function isLiquidMedication(packages: NDCPackage[], requestedDosageForm?: string): boolean {
+  // Check if user explicitly requested mL unit
+  if (requestedDosageForm && requestedDosageForm.toUpperCase() === 'ML') {
+    return true;
+  }
+  
+  // Check if any package has concentration data (indicates liquid)
+  const hasConcentration = packages.some(pkg => pkg.concentration !== undefined);
+  if (hasConcentration) {
+    return true;
+  }
+  
+  // Check if package dosage forms are liquid types
+  const liquidPackageCount = packages.filter(pkg => 
+    isLiquidDosageForm(pkg.dosageForm)
+  ).length;
+  
+  // If majority of packages are liquid, treat as liquid medication
+  return liquidPackageCount > packages.length / 2;
 }
