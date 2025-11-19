@@ -27271,7 +27271,7 @@ var init_environment = __esm({
       LOG_LEVEL: external_exports.enum(["debug", "info", "warn", "error", "critical"]).default("info"),
       ENABLE_REQUEST_LOGGING: external_exports.string().transform((val) => val === "true").default("true"),
       // Security
-      CORS_ALLOWED_ORIGINS: external_exports.string().default("http://localhost:3000,https://ndc-pharma-functions-kr3j.vercel.app"),
+      CORS_ALLOWED_ORIGINS: external_exports.string().default("http://localhost:3000,http://localhost:3001,https://ndc-pharma-functions-kr3j.vercel.app"),
       JWT_EXPIRATION_HOURS: external_exports.string().transform(Number).pipe(external_exports.number().positive()).default("24"),
       // Feature Flags
       ENABLE_AI_MATCHING: external_exports.string().transform((val) => val === "true").default("true"),
@@ -33741,6 +33741,23 @@ var init_logger = __esm({
 });
 
 // ../../packages/core-guardrails/src/errors.ts
+function isAppError(error) {
+  return error instanceof AppError;
+}
+function toAppError(error) {
+  if (isAppError(error)) {
+    return error;
+  }
+  if (error instanceof Error) {
+    return new AppError(error.message, HTTP_STATUS.INTERNAL_SERVER_ERROR, ERROR_CODES.INTERNAL_ERROR, false);
+  }
+  return new AppError(
+    "An unexpected error occurred",
+    HTTP_STATUS.INTERNAL_SERVER_ERROR,
+    ERROR_CODES.INTERNAL_ERROR,
+    false
+  );
+}
 var AppError, NotFoundError, DrugNotFoundError, RxCUINotFoundError, ExternalAPIError, RxNormAPIError;
 var init_errors2 = __esm({
   "../../packages/core-guardrails/src/errors.ts"() {
@@ -34329,7 +34346,11 @@ async function findRelatedDrugs(rxcui) {
         }
       }
     } catch (error) {
-      logger3.warn(`Failed to get related drugs: ${error}`, error);
+      logger3.warn("Failed to get related drugs", {
+        error,
+        rxcui,
+        step: "related_concepts"
+      });
     }
     try {
       const ingredientResponse = await rxnormService.getAllRelatedInfo(rxcui, ["IN"]);
@@ -34345,23 +34366,28 @@ async function findRelatedDrugs(rxcui) {
             term: ingredientName,
             maxEntries: 10
           });
-          if (drugsByIngredient?.approximateGroup?.candidate) {
-            for (const candidate of drugsByIngredient.approximateGroup.candidate) {
-              if (candidate.rank <= 50 && // Good match
-              !seenRxcuis.has(candidate.rxcui)) {
+          const candidateEntries = drugsByIngredient?.approximateGroup?.candidate;
+          const candidates = Array.isArray(candidateEntries) ? candidateEntries : candidateEntries ? [candidateEntries] : [];
+          if (candidates.length > 0) {
+            for (const candidate of candidates) {
+              const rankValue = Number(candidate.rank);
+              if (Number.isFinite(rankValue) && rankValue <= 50 && !seenRxcuis.has(candidate.rxcui)) {
                 try {
                   const props = await rxnormService.getRxCUIProperties(candidate.rxcui);
                   if (props?.properties?.tty === "SCD" || props?.properties?.tty === "SBD") {
                     relatedDrugs.push({
                       rxcui: candidate.rxcui,
-                      name: candidate.name,
+                      name: props.properties?.name || candidate.rxcui,
                       tty: props.properties.tty,
                       relationshipType: "same_ingredient"
                     });
                     seenRxcuis.add(candidate.rxcui);
                   }
                 } catch (error) {
-                  logger3.debug(`Skipping candidate ${candidate.rxcui}: ${error}`);
+                  logger3.debug("Skipping candidate due to property fetch failure", {
+                    candidateRxcui: candidate.rxcui,
+                    error
+                  });
                 }
               }
             }
@@ -34369,7 +34395,11 @@ async function findRelatedDrugs(rxcui) {
         }
       }
     } catch (error) {
-      logger3.warn(`Failed to find drugs by ingredient: ${error}`, error);
+      logger3.warn("Failed to find drugs by ingredient", {
+        error,
+        rxcui,
+        step: "ingredient_lookup"
+      });
     }
     const limitedResults = relatedDrugs.slice(0, 10);
     const executionTime = Date.now() - startTime;
@@ -34380,7 +34410,11 @@ async function findRelatedDrugs(rxcui) {
     });
     return limitedResults;
   } catch (error) {
-    logger3.error(`Error finding alternative drugs for ${rxcui}: ${error}`, error);
+    logger3.error(
+      "Error finding alternative drugs",
+      error,
+      { rxcui }
+    );
     return [];
   }
 }
@@ -40290,6 +40324,77 @@ var AlternativesResponseSchema = external_exports.object({
   }).optional()
 });
 
+// ../../packages/api-contracts/src/search.schema.ts
+init_zod();
+var DrugBadgeSchema = external_exports.object({
+  type: external_exports.enum(["ACTIVE", "COMMON", "PEDIATRIC", "GENERIC", "BRAND"]),
+  label: external_exports.string(),
+  variant: external_exports.enum(["success", "info", "warning"])
+});
+var DrugSearchResultSchema = external_exports.object({
+  rxcui: external_exports.string(),
+  name: external_exports.string(),
+  strength: external_exports.string(),
+  dosageForm: external_exports.string(),
+  dosageFormFamily: external_exports.enum(["SOLID", "LIQUID", "INJECTABLE", "SPECIAL"]),
+  hasActiveNDCs: external_exports.boolean(),
+  ndcCount: external_exports.number().int().nonnegative(),
+  commonUsageScore: external_exports.number().min(0).max(100),
+  badges: external_exports.array(DrugBadgeSchema),
+  tty: external_exports.string().optional(),
+  description: external_exports.string().optional()
+});
+var DosageFormGroupSchema = external_exports.object({
+  dosageForm: external_exports.string(),
+  dosageFormFamily: external_exports.enum(["SOLID", "LIQUID", "INJECTABLE", "SPECIAL"]),
+  results: external_exports.array(DrugSearchResultSchema),
+  expanded: external_exports.boolean()
+});
+var GroupedSearchResultsSchema = external_exports.object({
+  dosageFormGroups: external_exports.array(DosageFormGroupSchema),
+  totalResults: external_exports.number().int().nonnegative(),
+  hasInactiveResults: external_exports.boolean()
+});
+var AvailabilityStateSchema = external_exports.enum([
+  "ACTIVE_FOUND",
+  "ONLY_INACTIVE",
+  "NO_FDA_NDCS",
+  "NOT_FOUND"
+]);
+var DrugSearchRequestSchema = external_exports.object({
+  query: external_exports.string().min(2, "Search query must be at least 2 characters").max(200, "Search query must be less than 200 characters").describe("Drug name or partial name to search for"),
+  mode: external_exports.enum(["simple", "advanced"]).default("simple").describe("Search mode: simple (grouped) or advanced (flat list)"),
+  filters: external_exports.object({
+    activeOnly: external_exports.boolean().default(true).describe("Only show active NDCs"),
+    dosageForm: external_exports.string().optional().describe("Filter by dosage form (e.g., TABLET)"),
+    strength: external_exports.string().optional().describe("Filter by strength (e.g., 500)"),
+    manufacturer: external_exports.string().optional().describe("Filter by manufacturer name")
+  }).optional().describe("Filter options"),
+  pagination: external_exports.object({
+    page: external_exports.number().int().min(1).default(1).describe("Page number (1-indexed)"),
+    limit: external_exports.number().int().min(10).max(100).default(20).describe("Results per page")
+  }).optional().describe("Pagination options (for advanced mode)")
+});
+var PaginationInfoSchema = external_exports.object({
+  page: external_exports.number().int().min(1),
+  limit: external_exports.number().int().min(1),
+  total: external_exports.number().int().nonnegative(),
+  hasMore: external_exports.boolean()
+});
+var DrugSearchResponseSchema = external_exports.object({
+  results: external_exports.array(DrugSearchResultSchema).describe("Flat list of drug search results (for advanced mode)"),
+  grouped: GroupedSearchResultsSchema.optional().describe("Grouped results by dosage form (for simple mode)"),
+  pagination: PaginationInfoSchema.describe("Pagination information"),
+  availabilityState: AvailabilityStateSchema.describe("Overall availability state"),
+  message: external_exports.string().optional().describe("User-friendly message about search results"),
+  searchDuration: external_exports.number().optional().describe("Search duration in milliseconds")
+});
+var SearchErrorResponseSchema = external_exports.object({
+  error: external_exports.string().describe("Error message"),
+  code: external_exports.string().describe("Error code"),
+  details: external_exports.record(external_exports.any()).optional().describe("Additional error details")
+});
+
 // ../../packages/clients-rxnorm/src/facade.ts
 init_src();
 
@@ -41207,7 +41312,19 @@ function filterByDosageForm(packages, dosageForm) {
   return packages.filter((pkg) => pkg.dosageForm === normalizedForm);
 }
 function filterActivePackages(packages) {
-  return packages.filter((pkg) => pkg.marketingStatus.isActive);
+  const beforeCount = packages.length;
+  const activePackages = packages.filter((pkg) => pkg.marketingStatus.isActive);
+  const afterCount = activePackages.length;
+  const removedCount = beforeCount - afterCount;
+  logger.debug("FDA Client: activeOnly filter applied", {
+    service: "FDAClient",
+    beforeCount,
+    afterCount,
+    removedCount,
+    filterType: "activeOnly",
+    note: "Single source of truth - no additional active filtering downstream"
+  });
+  return activePackages;
 }
 function sortByPackageSize(packages) {
   return [...packages].sort((a2, b2) => a2.packageSize.quantity - b2.packageSize.quantity);
@@ -41799,6 +41916,324 @@ function validateLiquidVolume(totalML) {
   return warnings;
 }
 
+// ../../packages/domain-ndc/src/searchRanker.ts
+var RANKING_WEIGHTS = {
+  hasActiveNDCs: 50,
+  isGeneric: 20,
+  strengthCommonality: 15,
+  formCommonality: 10,
+  recencyScore: 5
+};
+var COMMON_STRENGTHS = [
+  5,
+  10,
+  20,
+  25,
+  50,
+  75,
+  100,
+  200,
+  250,
+  300,
+  400,
+  500,
+  600,
+  750,
+  800,
+  1e3
+];
+var COMMON_DOSAGE_FORMS = [
+  "TABLET",
+  "CAPSULE",
+  "ORAL SOLUTION",
+  "ORAL SUSPENSION",
+  "INJECTION",
+  "CREAM",
+  "OINTMENT"
+];
+function calculateRankingScore(drug) {
+  const factors = {
+    hasActiveNDCs: drug.hasActiveNDCs ? RANKING_WEIGHTS.hasActiveNDCs : 0,
+    isGeneric: calculateGenericScore(drug.tty),
+    strengthCommonality: calculateStrengthScore(drug.strength),
+    formCommonality: calculateFormScore(drug.dosageForm),
+    recencyScore: RANKING_WEIGHTS.recencyScore
+    // Default to full score (assume recent)
+  };
+  const totalScore = factors.hasActiveNDCs + factors.isGeneric + factors.strengthCommonality + factors.formCommonality + factors.recencyScore;
+  return Math.min(100, totalScore);
+}
+function calculateGenericScore(tty) {
+  if (!tty) return 0;
+  if (tty === "SCD") return RANKING_WEIGHTS.isGeneric;
+  if (tty === "SBD") return 0;
+  return RANKING_WEIGHTS.isGeneric / 2;
+}
+function calculateStrengthScore(strength) {
+  const match = strength.match(/(\d+(?:\.\d+)?)/);
+  if (!match) return 0;
+  const value = parseFloat(match[1]);
+  const isCommon = COMMON_STRENGTHS.some(
+    (commonValue) => Math.abs(value - commonValue) < 0.01
+  );
+  if (isCommon) {
+    return RANKING_WEIGHTS.strengthCommonality;
+  }
+  const nearestCommon = COMMON_STRENGTHS.reduce(
+    (prev, curr) => Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev
+  );
+  const distance = Math.abs(value - nearestCommon);
+  if (distance < 25) {
+    return RANKING_WEIGHTS.strengthCommonality * 0.5;
+  }
+  return 0;
+}
+function calculateFormScore(dosageForm) {
+  const normalizedForm = dosageForm.toUpperCase();
+  const index = COMMON_DOSAGE_FORMS.findIndex(
+    (form) => normalizedForm.includes(form)
+  );
+  if (index === -1) return 0;
+  const score = RANKING_WEIGHTS.formCommonality * (1 - index / COMMON_DOSAGE_FORMS.length);
+  return Math.max(0, score);
+}
+function rankSearchResults(results) {
+  return [...results].map((result) => ({
+    ...result,
+    commonUsageScore: calculateRankingScore(result)
+  })).sort((a2, b2) => {
+    if (b2.commonUsageScore !== a2.commonUsageScore) {
+      return b2.commonUsageScore - a2.commonUsageScore;
+    }
+    if (b2.ndcCount !== a2.ndcCount) {
+      return b2.ndcCount - a2.ndcCount;
+    }
+    return a2.name.localeCompare(b2.name);
+  });
+}
+function assignDrugBadges(drug) {
+  const badges = [];
+  if (drug.hasActiveNDCs) {
+    badges.push({
+      type: "ACTIVE",
+      label: "Active",
+      variant: "success"
+    });
+  }
+  if (drug.commonUsageScore >= 80) {
+    badges.push({
+      type: "COMMON",
+      label: "Common",
+      variant: "info"
+    });
+  }
+  if (isPediatricFormulation(drug)) {
+    badges.push({
+      type: "PEDIATRIC",
+      label: "Pediatric",
+      variant: "info"
+    });
+  }
+  if (drug.tty === "SCD") {
+    badges.push({
+      type: "GENERIC",
+      label: "Generic",
+      variant: "info"
+    });
+  }
+  if (drug.tty === "SBD") {
+    badges.push({
+      type: "BRAND",
+      label: "Brand",
+      variant: "warning"
+    });
+  }
+  return badges;
+}
+function isPediatricFormulation(drug) {
+  if (drug.dosageFormFamily === "LIQUID" /* LIQUID */) {
+    return true;
+  }
+  const match = drug.strength.match(/(\d+(?:\.\d+)?)/);
+  if (match) {
+    const value = parseFloat(match[1]);
+    if (value < 10 && drug.dosageFormFamily === "SOLID" /* SOLID */) {
+      return true;
+    }
+  }
+  const pediatricKeywords = ["PEDIATRIC", "CHEWABLE", "SUSPENSION"];
+  return pediatricKeywords.some(
+    (keyword) => drug.name.toUpperCase().includes(keyword)
+  );
+}
+function applyBadgesToResults(results) {
+  return results.map((result) => ({
+    ...result,
+    badges: assignDrugBadges(result)
+  }));
+}
+
+// ../../packages/domain-ndc/src/searchGrouper.ts
+var FAMILY_SORT_ORDER = [
+  "SOLID" /* SOLID */,
+  "LIQUID" /* LIQUID */,
+  "INJECTABLE" /* INJECTABLE */,
+  "SPECIAL" /* SPECIAL */
+];
+var FORM_SORT_ORDER = {
+  // Solid forms
+  TABLET: 1,
+  CAPSULE: 2,
+  "CAPSULE, EXTENDED RELEASE": 3,
+  "TABLET, EXTENDED RELEASE": 4,
+  "TABLET, CHEWABLE": 5,
+  // Liquid forms
+  "ORAL SOLUTION": 10,
+  "ORAL SUSPENSION": 11,
+  SYRUP: 12,
+  ELIXIR: 13,
+  // Injectable forms
+  INJECTION: 20,
+  "INJECTION, SOLUTION": 21,
+  "INJECTION, SUSPENSION": 22,
+  // Special forms
+  CREAM: 30,
+  OINTMENT: 31,
+  PATCH: 32,
+  INHALER: 33
+};
+function groupByDosageForm(results) {
+  const formMap = /* @__PURE__ */ new Map();
+  for (const result of results) {
+    const key = result.dosageForm.toUpperCase();
+    if (!formMap.has(key)) {
+      formMap.set(key, []);
+    }
+    formMap.get(key).push(result);
+  }
+  const groups = Array.from(formMap.entries()).map(
+    ([dosageForm, groupResults]) => ({
+      dosageForm: formatDosageFormLabel(dosageForm),
+      dosageFormFamily: groupResults[0].dosageFormFamily,
+      results: groupResults,
+      expanded: true
+      // Default to expanded
+    })
+  );
+  const sortedGroups = sortDosageFormGroups(groups);
+  return {
+    dosageFormGroups: sortedGroups,
+    totalResults: results.length,
+    hasInactiveResults: results.some((r2) => !r2.hasActiveNDCs)
+  };
+}
+function sortDosageFormGroups(groups) {
+  return [...groups].sort((a2, b2) => {
+    const aFamilyIndex = FAMILY_SORT_ORDER.indexOf(a2.dosageFormFamily);
+    const bFamilyIndex = FAMILY_SORT_ORDER.indexOf(b2.dosageFormFamily);
+    if (aFamilyIndex !== bFamilyIndex) {
+      return aFamilyIndex - bFamilyIndex;
+    }
+    const aFormOrder = FORM_SORT_ORDER[a2.dosageForm.toUpperCase()] || 999;
+    const bFormOrder = FORM_SORT_ORDER[b2.dosageForm.toUpperCase()] || 999;
+    if (aFormOrder !== bFormOrder) {
+      return aFormOrder - bFormOrder;
+    }
+    return b2.results.length - a2.results.length;
+  });
+}
+function limitResultsPerGroup(grouped, maxPerGroup = 3) {
+  const limitedGroups = grouped.dosageFormGroups.map((group) => ({
+    ...group,
+    results: group.results.slice(0, maxPerGroup)
+  }));
+  return {
+    ...grouped,
+    dosageFormGroups: limitedGroups
+  };
+}
+function formatDosageFormLabel(dosageForm) {
+  return dosageForm.toLowerCase().split(/[\s,]+/).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+
+// ../../packages/domain-ndc/src/searchFilters.ts
+function detectAvailabilityState(results, hasRxNormMatch) {
+  if (!hasRxNormMatch || results.length === 0) {
+    return "NOT_FOUND";
+  }
+  const hasAnyNDCs = results.some((r2) => r2.ndcCount > 0);
+  if (!hasAnyNDCs) {
+    return "NO_FDA_NDCS";
+  }
+  const hasActiveNDCs = results.some((r2) => r2.hasActiveNDCs);
+  if (hasActiveNDCs) {
+    return "ACTIVE_FOUND";
+  }
+  return "ONLY_INACTIVE";
+}
+function getAvailabilityMessage(state) {
+  switch (state) {
+    case "ACTIVE_FOUND":
+      return "Active medications found";
+    case "ONLY_INACTIVE":
+      return "This medication exists but has no active NDCs. It may be discontinued.";
+    case "NO_FDA_NDCS":
+      return "This medication is recognized clinically but has no FDA-listed NDCs.";
+    case "NOT_FOUND":
+      return "No matching medications found. Try a different spelling or brand name.";
+    default:
+      return "Unknown availability state";
+  }
+}
+function filterByStrength(results, strengthQuery) {
+  const normalizedQuery = strengthQuery.toLowerCase().trim();
+  if (!normalizedQuery) {
+    return results;
+  }
+  return results.filter(
+    (result) => result.strength.toLowerCase().includes(normalizedQuery)
+  );
+}
+function filterByDosageForm2(results, dosageFormQuery) {
+  const normalizedQuery = dosageFormQuery.toUpperCase().trim();
+  if (!normalizedQuery) {
+    return results;
+  }
+  return results.filter(
+    (result) => result.dosageForm.toUpperCase().includes(normalizedQuery)
+  );
+}
+function filterByMinNDCCount(results, minCount) {
+  return results.filter((result) => result.ndcCount >= minCount);
+}
+function filterByMinUsageScore(results, minScore) {
+  return results.filter((result) => result.commonUsageScore >= minScore);
+}
+function filterByBadgeType(results, badgeType) {
+  return results.filter(
+    (result) => result.badges.some((badge) => badge.type === badgeType)
+  );
+}
+function applyMultipleFilters(results, filters) {
+  let filtered = results;
+  if (filters.strength) {
+    filtered = filterByStrength(filtered, filters.strength);
+  }
+  if (filters.dosageForm) {
+    filtered = filterByDosageForm2(filtered, filters.dosageForm);
+  }
+  if (filters.minNDCCount !== void 0) {
+    filtered = filterByMinNDCCount(filtered, filters.minNDCCount);
+  }
+  if (filters.minUsageScore !== void 0) {
+    filtered = filterByMinUsageScore(filtered, filters.minUsageScore);
+  }
+  if (filters.badgeType) {
+    filtered = filterByBadgeType(filtered, filters.badgeType);
+  }
+  return filtered;
+}
+
 // ../../packages/clients-openfda/src/cachedClient.ts
 init_src2();
 var logger5 = createLogger({ service: "FDACachedClient" });
@@ -42275,6 +42710,46 @@ var FDAClient = class {
       packages = filterByDosageForm(packages, options.dosageForm);
     }
     return sortByPackageSize(packages);
+  }
+  /**
+   * Get NDC packages by batch list of RxCUIs (NEW - PR-12B)
+   * Returns detailed package information for each RxCUI with full metadata
+   * Useful for search result enrichment with manufacturer, brand names, etc.
+   * 
+   * @param rxcuiList Array of RxCUIs
+   * @param options Search options (limit per RxCUI, activeOnly, dosageForm)
+   * @returns Array of NDC packages with full metadata
+   * 
+   * @example
+   * ```typescript
+   * const rxcuis = ['104377', '197446', '198439'];
+   * const packages = await fdaClient.getDetailedPackagesByRxCUIList(rxcuis, {
+   *   activeOnly: true,
+   *   limitPerRxCUI: 5
+   * });
+   * // Returns packages with manufacturer, brand/generic names, marketing status
+   * ```
+   */
+  async getDetailedPackagesByRxCUIList(rxcuiList, options = {}) {
+    if (!rxcuiList || rxcuiList.length === 0) {
+      return [];
+    }
+    const allPackages = [];
+    const results = await Promise.allSettled(
+      rxcuiList.map(
+        (rxcui) => this.getNDCsByRxCUI(rxcui, {
+          limit: options.limitPerRxCUI || 100,
+          activeOnly: options.activeOnly,
+          dosageForm: options.dosageForm
+        })
+      )
+    );
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        allPackages.push(...result.value);
+      }
+    }
+    return sortByPackageSize(allPackages);
   }
 };
 var fdaClient = new FDAClient();
@@ -50550,6 +51025,27 @@ var OpenAIService = class {
     return this.client !== null && FEATURE_FLAGS.ENABLE_OPENAI && this.circuitBreaker.state !== "open";
   }
   /**
+   * Check if OpenAI is enabled (API key + feature flag)
+   * @returns True if OpenAI client initialized and feature enabled
+   */
+  isEnabled() {
+    return this.client !== null && FEATURE_FLAGS.ENABLE_OPENAI;
+  }
+  /**
+   * Lightweight chat completion helper for other modules
+   * Reuses configured model unless overridden
+   */
+  async chat(params) {
+    if (!this.isAvailable()) {
+      throw new Error("OpenAI service is not available");
+    }
+    const model = params.model || this.config.model;
+    return this.client.chat.completions.create({
+      ...params,
+      model
+    });
+  }
+  /**
    * Calculate usage metrics and estimated cost
    * @param usage OpenAI usage data
    * @param latency Request latency
@@ -50955,7 +51451,14 @@ async function compareAlternatives(request) {
     });
     return parsed;
   } catch (error) {
-    logger7.error(`Error comparing alternatives: ${error}`, error);
+    logger7.error(
+      "Error comparing alternatives",
+      error,
+      {
+        originalDrug: request.originalDrug,
+        alternativeCount: request.alternatives.length
+      }
+    );
     return generateFallbackResponse(request);
   }
 }
@@ -51606,11 +52109,632 @@ ${alt.recommendation}`
   }
 }
 
+// src/api/v1/search.ts
+init_src2();
+init_src();
+
+// ../../packages/data-cache/src/cacheService.ts
+init_src2();
+var import_crypto3 = require("crypto");
+var logger10 = createLogger({ service: "CacheService" });
+var DEFAULT_CONFIG = {
+  defaultTTL: 24 * 60 * 60 * 1e3,
+  // 24 hours in milliseconds
+  maxSize: 1e4,
+  // Maximum 10,000 entries
+  cleanupInterval: 60 * 60 * 1e3
+  // Cleanup every hour
+};
+var FirestoreCacheService = class {
+  constructor(db, collectionName = "calculationCache", config2 = {}) {
+    this.db = db;
+    this.collectionName = collectionName;
+    this.config = { ...DEFAULT_CONFIG, ...config2 };
+    this.stats = { hits: 0, misses: 0, totalLatency: 0, operations: 0 };
+    if (this.config.cleanupInterval) {
+      this.startPeriodicCleanup();
+    }
+    logger10.info("Cache service initialized", {
+      collection: this.collectionName,
+      defaultTTL: this.config.defaultTTL,
+      maxSize: this.config.maxSize
+    });
+  }
+  /**
+   * Generate consistent cache key
+   * @param key Original key
+   * @returns Hashed key for Firestore document ID
+   */
+  getCacheKey(key) {
+    return (0, import_crypto3.createHash)("sha256").update(key).digest("hex");
+  }
+  /**
+   * Check if cache entry is expired
+   * @param entry Cache entry
+   * @returns True if expired
+   */
+  isExpired(entry) {
+    return /* @__PURE__ */ new Date() > new Date(entry.expiresAt);
+  }
+  /**
+   * Get value from cache
+   */
+  async get(key) {
+    const startTime = Date.now();
+    try {
+      const docId = this.getCacheKey(key);
+      const docRef = this.db.collection(this.collectionName).doc(docId);
+      const doc = await docRef.get();
+      if (!doc.exists) {
+        this.stats.misses++;
+        this.recordLatency(startTime);
+        logger10.debug("Cache miss", { key, docId });
+        return void 0;
+      }
+      const entry = doc.data();
+      if (this.isExpired(entry)) {
+        this.stats.misses++;
+        this.recordLatency(startTime);
+        logger10.debug("Cache entry expired", { key, docId, expiresAt: entry.expiresAt });
+        docRef.delete().catch((err) => {
+          logger10.error("Failed to delete expired entry", err, { key, docId });
+        });
+        return void 0;
+      }
+      this.stats.hits++;
+      this.recordLatency(startTime);
+      logger10.debug("Cache hit", { key, docId, age: Date.now() - new Date(entry.createdAt).getTime() });
+      return entry.value;
+    } catch (error) {
+      logger10.error("Cache get failed", error, { key });
+      this.stats.misses++;
+      this.recordLatency(startTime);
+      return void 0;
+    }
+  }
+  /**
+   * Set value in cache
+   */
+  async set(key, value, ttl) {
+    const startTime = Date.now();
+    try {
+      const docId = this.getCacheKey(key);
+      const now = /* @__PURE__ */ new Date();
+      const effectiveTTL = ttl || this.config.defaultTTL;
+      const expiresAt = new Date(now.getTime() + effectiveTTL);
+      const entry = {
+        key,
+        value,
+        expiresAt,
+        createdAt: now,
+        updatedAt: now,
+        ttl: effectiveTTL
+      };
+      await this.db.collection(this.collectionName).doc(docId).set(entry);
+      this.recordLatency(startTime);
+      logger10.debug("Cache set", { key, docId, ttl: effectiveTTL, expiresAt });
+    } catch (error) {
+      logger10.error("Cache set failed", error, { key });
+    }
+  }
+  /**
+   * Invalidate cache entry
+   */
+  async invalidate(key) {
+    const startTime = Date.now();
+    try {
+      const docId = this.getCacheKey(key);
+      await this.db.collection(this.collectionName).doc(docId).delete();
+      this.recordLatency(startTime);
+      logger10.debug("Cache invalidated", { key, docId });
+    } catch (error) {
+      logger10.error("Cache invalidate failed", error, { key });
+    }
+  }
+  /**
+   * Invalidate all cache entries matching a pattern
+   */
+  async invalidatePattern(pattern) {
+    const startTime = Date.now();
+    try {
+      const snapshot = await this.db.collection(this.collectionName).where("key", ">=", pattern.replace("*", "")).where("key", "<", pattern.replace("*", "\uF8FF")).get();
+      const batch = this.db.batch();
+      let count = 0;
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+        count++;
+      });
+      await batch.commit();
+      this.recordLatency(startTime);
+      logger10.info("Cache pattern invalidated", { pattern, count });
+    } catch (error) {
+      logger10.error("Cache pattern invalidate failed", error, { pattern });
+    }
+  }
+  /**
+   * Get cache statistics
+   */
+  async getStats() {
+    try {
+      const snapshot = await this.db.collection(this.collectionName).count().get();
+      const size = snapshot.data().count;
+      const totalRequests = this.stats.hits + this.stats.misses;
+      const hitRate = totalRequests > 0 ? this.stats.hits / totalRequests * 100 : 0;
+      const avgLatency = this.stats.operations > 0 ? this.stats.totalLatency / this.stats.operations : 0;
+      return {
+        hits: this.stats.hits,
+        misses: this.stats.misses,
+        hitRate,
+        size,
+        avgLatency
+      };
+    } catch (error) {
+      logger10.error("Failed to get cache stats", error);
+      return {
+        hits: this.stats.hits,
+        misses: this.stats.misses,
+        hitRate: 0,
+        size: 0,
+        avgLatency: 0
+      };
+    }
+  }
+  /**
+   * Clear all cache entries
+   */
+  async clear() {
+    const startTime = Date.now();
+    try {
+      const snapshot = await this.db.collection(this.collectionName).get();
+      const batch = this.db.batch();
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      this.recordLatency(startTime);
+      logger10.info("Cache cleared", { count: snapshot.size });
+    } catch (error) {
+      logger10.error("Cache clear failed", error);
+    }
+  }
+  /**
+   * Check if key exists in cache
+   */
+  async has(key) {
+    try {
+      const value = await this.get(key);
+      return value !== void 0;
+    } catch (error) {
+      logger10.error("Cache has failed", error, { key });
+      return false;
+    }
+  }
+  /**
+   * Record operation latency
+   */
+  recordLatency(startTime) {
+    const latency = Date.now() - startTime;
+    this.stats.totalLatency += latency;
+    this.stats.operations++;
+  }
+  /**
+   * Start periodic cleanup of expired entries
+   */
+  startPeriodicCleanup() {
+    this.cleanupTimer = setInterval(() => {
+      this.cleanupExpired().catch((err) => {
+        logger10.error("Periodic cleanup failed", err);
+      });
+    }, this.config.cleanupInterval);
+    logger10.info("Periodic cleanup started", { interval: this.config.cleanupInterval });
+  }
+  /**
+   * Clean up expired cache entries
+   */
+  async cleanupExpired() {
+    try {
+      const now = /* @__PURE__ */ new Date();
+      const snapshot = await this.db.collection(this.collectionName).where("expiresAt", "<", now).limit(100).get();
+      if (snapshot.empty) {
+        logger10.debug("No expired entries to clean up");
+        return;
+      }
+      const batch = this.db.batch();
+      snapshot.docs.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+      logger10.info("Expired cache entries cleaned up", { count: snapshot.size });
+    } catch (error) {
+      logger10.error("Failed to cleanup expired entries", error);
+    }
+  }
+  /**
+   * Stop periodic cleanup
+   */
+  stopCleanup() {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = void 0;
+      logger10.info("Periodic cleanup stopped");
+    }
+  }
+};
+function createDrugSearchKey(query, mode, filters) {
+  const normalizedQuery = query.toLowerCase().trim();
+  const filterString = filters ? JSON.stringify(filters) : "";
+  return `drug:search:${mode}:${normalizedQuery}:${filterString}`;
+}
+
+// src/api/v1/search.ts
+var import_firestore2 = require("firebase-admin/firestore");
+var SEARCH_CACHE_TTL = 300 * 1e3;
+var cacheService2 = null;
+function getCacheService() {
+  if (!cacheService2) {
+    cacheService2 = new FirestoreCacheService(
+      (0, import_firestore2.getFirestore)(),
+      "searchCache",
+      {
+        defaultTTL: SEARCH_CACHE_TTL,
+        maxSize: 5e3,
+        cleanupInterval: 60 * 60 * 1e3
+        // 1 hour
+      }
+    );
+  }
+  return cacheService2;
+}
+async function searchDrugs(req, res) {
+  const startTime = Date.now();
+  const correlationId = req.correlationId || "unknown";
+  try {
+    const request = DrugSearchRequestSchema.parse(req.body);
+    const { query, mode, filters, pagination } = request;
+    logger.info("Drug search requested", {
+      correlationId,
+      query,
+      mode,
+      filters,
+      userId: req.user?.uid
+    });
+    const cache = getCacheService();
+    const cacheKey = createDrugSearchKey(query, mode, filters);
+    const respondWithNotFound = async () => {
+      const response2 = {
+        results: [],
+        pagination: {
+          page: pagination?.page || 1,
+          limit: pagination?.limit || 20,
+          total: 0,
+          hasMore: false
+        },
+        availabilityState: "NOT_FOUND",
+        message: getAvailabilityMessage("NOT_FOUND"),
+        searchDuration: Date.now() - startTime
+      };
+      try {
+        await cache.set(cacheKey, response2, SEARCH_CACHE_TTL / 2);
+        logger.debug("NOT_FOUND result cached", { correlationId, cacheKey });
+      } catch (error) {
+        logger.warn("Failed to cache NOT_FOUND result", {
+          correlationId,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      }
+      res.json(response2);
+    };
+    try {
+      const cachedResponse = await cache.get(cacheKey);
+      if (cachedResponse) {
+        logger.info("Cache hit for drug search", {
+          correlationId,
+          query,
+          cacheKey
+        });
+        cachedResponse.searchDuration = Date.now() - startTime;
+        res.json(cachedResponse);
+        return;
+      }
+    } catch (error) {
+      logger.warn("Cache check failed, continuing with search", {
+        correlationId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+    logger.debug("Searching RxNorm", { correlationId, query });
+    let rxnormNormalization = null;
+    try {
+      rxnormNormalization = await nameToRxCui(query);
+    } catch (error) {
+      const appError = toAppError(error);
+      if (appError.code === ERROR_CODES.RXCUI_NOT_FOUND) {
+        await respondWithNotFound();
+        return;
+      }
+      throw appError;
+    }
+    const drugCandidates = rxnormNormalization ? [
+      {
+        rxcui: rxnormNormalization.rxcui,
+        name: rxnormNormalization.name,
+        confidence: rxnormNormalization.confidence
+      },
+      ...rxnormNormalization.alternatives?.map((alt) => ({
+        rxcui: alt.rxcui,
+        name: alt.name,
+        confidence: alt.confidence
+      })) ?? []
+    ] : [];
+    if (drugCandidates.length === 0) {
+      logger.info("No RxNorm matches found", { correlationId, query });
+      await respondWithNotFound();
+      return;
+    }
+    logger.debug("RxNorm matches found", {
+      correlationId,
+      count: drugCandidates.length,
+      candidates: drugCandidates.map((d2) => ({
+        rxcui: d2.rxcui,
+        name: d2.name,
+        confidence: d2.confidence
+      }))
+    });
+    logger.debug("Fetching FDA packages", { correlationId });
+    const fdaResults = await Promise.allSettled(
+      drugCandidates.slice(0, 20).map(async (drug) => {
+        try {
+          const packages = await fdaClient.getNDCsByRxCUI(drug.rxcui, {
+            activeOnly: filters?.activeOnly ?? true
+          });
+          if (packages.length === 0) {
+            logger.debug("RxCUI search returned no results, falling back to generic name", {
+              correlationId,
+              rxcui: drug.rxcui,
+              name: drug.name
+            });
+            const fallbackPackages = await fdaClient.searchByGenericName(drug.name, {
+              activeOnly: filters?.activeOnly ?? true,
+              limit: 100
+            });
+            return {
+              drug,
+              packages: fallbackPackages
+            };
+          }
+          return {
+            drug,
+            packages
+          };
+        } catch (error) {
+          logger.warn("RxCUI search failed, trying generic name fallback", {
+            correlationId,
+            rxcui: drug.rxcui,
+            name: drug.name,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          try {
+            const fallbackPackages = await fdaClient.searchByGenericName(drug.name, {
+              activeOnly: filters?.activeOnly ?? true,
+              limit: 100
+            });
+            return {
+              drug,
+              packages: fallbackPackages
+            };
+          } catch (fallbackError) {
+            logger.error("Both RxCUI and generic name searches failed", {
+              correlationId,
+              rxcui: drug.rxcui,
+              name: drug.name,
+              fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+            });
+            return {
+              drug,
+              packages: []
+            };
+          }
+        }
+      })
+    );
+    const searchResults = [];
+    for (const result of fdaResults) {
+      if (result.status === "fulfilled" && result.value) {
+        const { drug, packages } = result.value;
+        logger.debug("FDA result for drug", {
+          correlationId,
+          rxcui: drug.rxcui,
+          name: drug.name,
+          packageCount: packages.length,
+          packages: packages.slice(0, 3).map((p2) => ({
+            ndc: p2.ndc,
+            dosageForm: p2.dosageForm,
+            isActive: p2.marketingStatus.isActive
+          }))
+        });
+        const formulationGroups = /* @__PURE__ */ new Map();
+        for (const pkg of packages) {
+          const strength = pkg.activeIngredients?.[0]?.strength || "";
+          const formulationKey = `${pkg.genericName}|${strength}|${pkg.dosageForm}`;
+          if (!formulationGroups.has(formulationKey)) {
+            formulationGroups.set(formulationKey, []);
+          }
+          formulationGroups.get(formulationKey).push(pkg);
+        }
+        logger.debug("Formulation groups created", {
+          correlationId,
+          rxcui: drug.rxcui,
+          formulationCount: formulationGroups.size,
+          formulations: Array.from(formulationGroups.keys()).slice(0, 5)
+        });
+        for (const formulationPackages of formulationGroups.values()) {
+          const firstPackage = formulationPackages[0];
+          const strength = firstPackage.activeIngredients?.[0]?.strength || "";
+          const displayName = firstPackage.brandName || `${firstPackage.genericName}${strength ? " " + strength : ""} ${firstPackage.dosageForm}`;
+          const searchResult = {
+            rxcui: drug.rxcui,
+            name: displayName,
+            strength,
+            dosageForm: firstPackage.dosageForm,
+            dosageFormFamily: determineDosageFormFamily(formulationPackages),
+            hasActiveNDCs: formulationPackages.some((p2) => p2.marketingStatus.isActive),
+            ndcCount: formulationPackages.length,
+            commonUsageScore: 0,
+            // Will be calculated by rankSearchResults
+            badges: [],
+            description: displayName
+          };
+          searchResults.push(searchResult);
+        }
+      } else if (result.status === "rejected") {
+        logger.warn("FDA result rejected", {
+          correlationId,
+          reason: result.reason
+        });
+      }
+    }
+    logger.debug("Search results built", {
+      correlationId,
+      count: searchResults.length
+    });
+    const availabilityState = detectAvailabilityState(
+      searchResults,
+      drugCandidates.length > 0
+    );
+    logger.debug("Applying smart ranking", { correlationId });
+    const rankedResults = rankSearchResults(searchResults);
+    const resultsWithBadges = applyBadgesToResults(rankedResults);
+    let filteredResults = resultsWithBadges;
+    logger.debug("Before domain-level filtering (activeOnly already applied at FDA level)", {
+      correlationId,
+      count: resultsWithBadges.length,
+      activeOnlyFilteredUpstream: filters?.activeOnly ?? true,
+      results: resultsWithBadges.map((r2) => ({
+        name: r2.name,
+        rxcui: r2.rxcui,
+        hasActiveNDCs: r2.hasActiveNDCs,
+        // Informational flag, not used for filtering
+        ndcCount: r2.ndcCount
+      })),
+      filters
+    });
+    if (filters) {
+      filteredResults = applyMultipleFilters(resultsWithBadges, {
+        activeOnly: filters.activeOnly,
+        // Passed but ignored by applyMultipleFilters
+        strength: filters.strength,
+        dosageForm: filters.dosageForm
+        // Note: manufacturer filter would require additional FDA data
+      });
+    }
+    logger.debug("Domain-level filters applied (strength, dosageForm only)", {
+      correlationId,
+      beforeCount: resultsWithBadges.length,
+      afterCount: filteredResults.length,
+      removedCount: resultsWithBadges.length - filteredResults.length,
+      filtersApplied: {
+        strength: filters?.strength || null,
+        dosageForm: filters?.dosageForm || null,
+        activeOnly: "N/A - filtered at FDA Client level"
+      }
+    });
+    const response = {
+      results: [],
+      pagination: {
+        page: pagination?.page || 1,
+        limit: pagination?.limit || 20,
+        total: filteredResults.length,
+        hasMore: false
+      },
+      availabilityState,
+      message: getAvailabilityMessage(availabilityState),
+      searchDuration: Date.now() - startTime
+    };
+    if (mode === "simple") {
+      logger.debug("Formatting for simple mode", { correlationId });
+      const grouped = groupByDosageForm(filteredResults);
+      const sortedGroups = {
+        ...grouped,
+        dosageFormGroups: sortDosageFormGroups(grouped.dosageFormGroups)
+      };
+      const limited = limitResultsPerGroup(sortedGroups, 3);
+      response.grouped = limited;
+      response.results = [];
+      logger.info("Simple mode search completed", {
+        correlationId,
+        groups: limited.dosageFormGroups.length,
+        totalResults: limited.totalResults
+      });
+    } else {
+      logger.debug("Formatting for advanced mode", { correlationId });
+      const page = pagination?.page || 1;
+      const limit2 = pagination?.limit || 20;
+      const startIndex = (page - 1) * limit2;
+      const endIndex = startIndex + limit2;
+      response.results = filteredResults.slice(startIndex, endIndex);
+      response.pagination = {
+        page,
+        limit: limit2,
+        total: filteredResults.length,
+        hasMore: endIndex < filteredResults.length
+      };
+      logger.info("Advanced mode search completed", {
+        correlationId,
+        page,
+        limit: limit2,
+        total: filteredResults.length
+      });
+    }
+    try {
+      await cache.set(cacheKey, response, SEARCH_CACHE_TTL);
+      logger.debug("Search results cached", {
+        correlationId,
+        cacheKey,
+        ttl: SEARCH_CACHE_TTL
+      });
+    } catch (error) {
+      logger.warn("Failed to cache search results", {
+        correlationId,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+    res.json(response);
+  } catch (error) {
+    const appError = toAppError(error);
+    logger.error("Drug search failed", {
+      correlationId,
+      error: appError,
+      query: req.body?.query
+    });
+    res.status(appError.statusCode).json({
+      error: appError.message,
+      code: appError.code,
+      ...process.env.NODE_ENV === "development" && appError.details ? { details: appError.details } : {}
+    });
+  }
+}
+function determineDosageFormFamily(packages) {
+  if (packages.length === 0) {
+    return "SPECIAL" /* SPECIAL */;
+  }
+  const firstForm = packages[0].dosageForm.toUpperCase();
+  if (firstForm.includes("TABLET") || firstForm.includes("CAPSULE")) {
+    return "SOLID" /* SOLID */;
+  }
+  if (firstForm.includes("SOLUTION") || firstForm.includes("SUSPENSION") || firstForm.includes("SYRUP") || firstForm.includes("ELIXIR")) {
+    return "LIQUID" /* LIQUID */;
+  }
+  if (firstForm.includes("INJECTION") || firstForm.includes("INJECTABLE")) {
+    return "INJECTABLE" /* INJECTABLE */;
+  }
+  return "SPECIAL" /* SPECIAL */;
+}
+
 // src/api/v1/analytics.ts
 var admin = __toESM(require("firebase-admin"), 1);
 init_src2();
 init_src2();
-var logger10 = createLogger({ service: "AnalyticsEndpoint" });
+var logger11 = createLogger({ service: "AnalyticsEndpoint" });
 async function getSystemAnalytics(req, res) {
   const startTime = Date.now();
   try {
@@ -51642,7 +52766,7 @@ async function getSystemAnalytics(req, res) {
       }
     });
   } catch (error) {
-    logger10.error("Failed to get system analytics", error, {
+    logger11.error("Failed to get system analytics", error, {
       userId: req.user?.uid
     });
     res.status(500).json({
@@ -51678,7 +52802,7 @@ async function getUserActivityStats(db) {
       topUsers
     };
   } catch (error) {
-    logger10.error("Failed to get user activity stats", error);
+    logger11.error("Failed to get user activity stats", error);
     return {
       totalUsers: 0,
       activeUsers: 0,
@@ -51714,7 +52838,7 @@ async function getCachePerformance(db, startDate) {
       averageLatency
     };
   } catch (error) {
-    logger10.error("Failed to get cache performance", error);
+    logger11.error("Failed to get cache performance", error);
     return {
       totalRequests: 0,
       cacheHits: 0,
@@ -51774,7 +52898,7 @@ async function getUserAnalytics(req, res) {
       }
     });
   } catch (error) {
-    logger10.error("Failed to get user analytics", error, {
+    logger11.error("Failed to get user analytics", error, {
       userId: req.user?.uid,
       requestedUserId: req.params.userId
     });
@@ -51830,7 +52954,7 @@ async function getAPIHealthMetrics(req, res) {
       }
     });
   } catch (error) {
-    logger10.error("Failed to get API health metrics", error);
+    logger11.error("Failed to get API health metrics", error);
     res.status(500).json({
       success: false,
       error: {
@@ -51844,20 +52968,20 @@ async function getAPIHealthMetrics(req, res) {
 // src/api/v1/middlewares/validate.ts
 init_zod();
 init_src2();
-var logger11 = createLogger({ service: "ValidationMiddleware" });
+var logger12 = createLogger({ service: "ValidationMiddleware" });
 function validateRequest(schema) {
   return async (req, res, next) => {
     try {
       const validated = await schema.parseAsync(req.body);
       req.body = validated;
-      logger11.debug("Request validation successful", {
+      logger12.debug("Request validation successful", {
         path: req.path,
         method: req.method
       });
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        logger11.warn("Request validation failed", {
+        logger12.warn("Request validation failed", {
           path: req.path,
           method: req.method,
           errors: error.errors
@@ -51876,7 +53000,7 @@ function validateRequest(schema) {
         });
         return;
       }
-      logger11.error("Unexpected validation error", error, {
+      logger12.error("Unexpected validation error", error, {
         path: req.path,
         method: req.method
       });
@@ -51893,9 +53017,9 @@ function validateRequest(schema) {
 
 // src/api/v1/middlewares/error.ts
 init_src2();
-var logger12 = createLogger({ service: "error-middleware" });
+var logger13 = createLogger({ service: "error-middleware" });
 function errorHandler(err, req, res, _next) {
-  logger12.error("Request error", err, {
+  logger13.error("Request error", err, {
     path: req.path,
     method: req.method
   });
@@ -51951,7 +53075,7 @@ var admin3 = __toESM(require("firebase-admin"), 1);
 // src/api/v1/middlewares/auth.ts
 var admin2 = __toESM(require("firebase-admin"), 1);
 init_src2();
-var logger13 = createLogger({ service: "AuthMiddleware" });
+var logger14 = createLogger({ service: "AuthMiddleware" });
 async function verifyToken(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -51973,7 +53097,7 @@ async function verifyToken(req, res, next) {
       role,
       emailVerified: decodedToken.email_verified
     };
-    logger13.debug("User authenticated", {
+    logger14.debug("User authenticated", {
       uid: req.user.uid,
       email: req.user.email,
       role: req.user.role
@@ -51981,7 +53105,7 @@ async function verifyToken(req, res, next) {
     next();
   } catch (error) {
     if (error.code === "auth/id-token-expired") {
-      logger13.warn("Expired token", { error });
+      logger14.warn("Expired token", { error });
       res.status(401).json({
         success: false,
         error: {
@@ -51992,7 +53116,7 @@ async function verifyToken(req, res, next) {
       return;
     }
     if (error.code === "auth/argument-error") {
-      logger13.warn("Invalid token format", { error });
+      logger14.warn("Invalid token format", { error });
       res.status(401).json({
         success: false,
         error: {
@@ -52003,7 +53127,7 @@ async function verifyToken(req, res, next) {
       return;
     }
     if (error instanceof AppError) {
-      logger13.warn("Authentication failed", { error });
+      logger14.warn("Authentication failed", { error });
       res.status(error.statusCode).json({
         success: false,
         error: {
@@ -52013,7 +53137,7 @@ async function verifyToken(req, res, next) {
       });
       return;
     }
-    logger13.error("Authentication error", error);
+    logger14.error("Authentication error", error);
     res.status(500).json({
       success: false,
       error: {
@@ -52034,7 +53158,7 @@ function checkRole(allowedRoles) {
         );
       }
       if (!req.user.role) {
-        logger13.warn("User has no role assigned", { uid: req.user.uid });
+        logger14.warn("User has no role assigned", { uid: req.user.uid });
         res.status(403).json({
           success: false,
           error: {
@@ -52045,7 +53169,7 @@ function checkRole(allowedRoles) {
         return;
       }
       if (!allowedRoles.includes(req.user.role)) {
-        logger13.warn("Insufficient permissions", {
+        logger14.warn("Insufficient permissions", {
           uid: req.user.uid,
           userRole: req.user.role,
           requiredRoles: allowedRoles
@@ -52063,7 +53187,7 @@ function checkRole(allowedRoles) {
         });
         return;
       }
-      logger13.debug("Role check passed", {
+      logger14.debug("Role check passed", {
         uid: req.user.uid,
         role: req.user.role
       });
@@ -52079,7 +53203,7 @@ function checkRole(allowedRoles) {
         });
         return;
       }
-      logger13.error("Role check error", error);
+      logger14.error("Role check error", error);
       res.status(500).json({
         success: false,
         error: {
@@ -52094,7 +53218,7 @@ async function optionalAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      logger13.debug("No auth token provided, continuing as anonymous");
+      logger14.debug("No auth token provided, continuing as anonymous");
       next();
       return;
     }
@@ -52108,13 +53232,13 @@ async function optionalAuth(req, res, next) {
       role: userData?.role,
       emailVerified: decodedToken.email_verified
     };
-    logger13.debug("Optional auth - user authenticated", {
+    logger14.debug("Optional auth - user authenticated", {
       uid: req.user.uid,
       role: req.user.role
     });
     next();
   } catch (error) {
-    logger13.warn("Optional auth - invalid token, continuing as anonymous", {
+    logger14.warn("Optional auth - invalid token, continuing as anonymous", {
       error
     });
     next();
@@ -52122,7 +53246,7 @@ async function optionalAuth(req, res, next) {
 }
 
 // src/api/v1/middlewares/rateLimit.ts
-var logger14 = createLogger({ service: "rate-limit-middleware" });
+var logger15 = createLogger({ service: "rate-limit-middleware" });
 var RATE_LIMITS = {
   ["admin" /* ADMIN */]: Number.MAX_SAFE_INTEGER,
   // Unlimited
@@ -52200,7 +53324,7 @@ async function checkUserRateLimit(userId, role) {
     });
     return result;
   } catch (error) {
-    logger14.error("Error checking rate limit", error, { userId, role });
+    logger15.error("Error checking rate limit", error, { userId, role });
     return {
       allowed: true,
       remaining: RATE_LIMITS[role],
@@ -52244,12 +53368,12 @@ async function rateLimitMiddleware(req, res, next) {
       const role = req.user.role || "pharmacy_technician" /* PHARMACY_TECHNICIAN */;
       limit2 = RATE_LIMITS[role];
       if (role === "admin" /* ADMIN */) {
-        logger14.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
+        logger15.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
         next();
         return;
       }
       result = await checkUserRateLimit(req.user.uid, role);
-      logger14.debug("User rate limit check", {
+      logger15.debug("User rate limit check", {
         uid: req.user.uid,
         role,
         allowed: result.allowed,
@@ -52259,7 +53383,7 @@ async function rateLimitMiddleware(req, res, next) {
       identifier = req.ip || "unknown";
       limit2 = RATE_LIMITS.anonymous;
       result = checkAnonymousRateLimit(identifier);
-      logger14.debug("Anonymous rate limit check", {
+      logger15.debug("Anonymous rate limit check", {
         ip: identifier,
         allowed: result.allowed,
         remaining: result.remaining
@@ -52269,7 +53393,7 @@ async function rateLimitMiddleware(req, res, next) {
     res.setHeader("X-RateLimit-Remaining", result.remaining.toString());
     res.setHeader("X-RateLimit-Reset", result.resetAt.toISOString());
     if (!result.allowed) {
-      logger14.warn("Rate limit exceeded", {
+      logger15.warn("Rate limit exceeded", {
         identifier,
         retryAfter: result.retryAfter,
         authenticated: !!req.user
@@ -52293,14 +53417,14 @@ async function rateLimitMiddleware(req, res, next) {
     }
     next();
   } catch (error) {
-    logger14.error("Rate limit middleware error", error);
+    logger15.error("Rate limit middleware error", error);
     next();
   }
 }
 
 // src/api/v1/middlewares/redact.ts
 init_src2();
-var logger15 = createLogger({ service: "redaction-middleware" });
+var logger16 = createLogger({ service: "redaction-middleware" });
 function redactionMiddleware(req, res, next) {
   const context = sanitizeLogContext({
     method: req.method,
@@ -52308,7 +53432,7 @@ function redactionMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.get("user-agent")
   });
-  logger15.info("Request received", context);
+  logger16.info("Request received", context);
   const startTime = Date.now();
   res.on("finish", () => {
     const executionTime = Date.now() - startTime;
@@ -52318,14 +53442,14 @@ function redactionMiddleware(req, res, next) {
       statusCode: res.statusCode,
       executionTime
     });
-    logger15.info("Request completed", responseContext);
+    logger16.info("Request completed", responseContext);
   });
   next();
 }
 
 // src/api/v1/middlewares/logging.ts
 init_src2();
-var logger16 = createLogger({ service: "request-logger" });
+var logger17 = createLogger({ service: "request-logger" });
 function getCorrelationId(req) {
   const existingId = req.headers["x-correlation-id"] || req.headers["x-request-id"] || req.headers["x-trace-id"];
   if (existingId && typeof existingId === "string") {
@@ -52388,7 +53512,7 @@ function loggingMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.headers["user-agent"]
   };
-  logger16.info("Incoming request", {
+  logger17.info("Incoming request", {
     ...logContext,
     body: redactRequestBody(req.body),
     query: req.query
@@ -52396,7 +53520,7 @@ function loggingMiddleware(req, res, next) {
   const originalJson = res.json.bind(res);
   res.json = function(body) {
     const executionTime = Date.now() - startTime;
-    logger16.info("Outgoing response", {
+    logger17.info("Outgoing response", {
       ...logContext,
       statusCode: res.statusCode,
       executionTime,
@@ -52410,7 +53534,7 @@ function loggingMiddleware(req, res, next) {
       return;
     }
     const executionTime = Date.now() - startTime;
-    logger16.info("Request completed", {
+    logger17.info("Request completed", {
       ...logContext,
       statusCode: res.statusCode,
       executionTime
@@ -52420,7 +53544,7 @@ function loggingMiddleware(req, res, next) {
   next = function(err) {
     if (err) {
       const executionTime = Date.now() - startTime;
-      logger16.error("Request error", err, {
+      logger17.error("Request error", err, {
         ...logContext,
         executionTime,
         errorName: err?.name,
@@ -52435,10 +53559,10 @@ function loggingMiddleware(req, res, next) {
 // src/index.ts
 init_src();
 init_src2();
-var logger17 = createLogger({ service: "functions-main" });
+var logger18 = createLogger({ service: "functions-main" });
 if (!admin4.apps.length) {
   admin4.initializeApp();
-  logger17.info("Firebase Admin SDK initialized");
+  logger18.info("Firebase Admin SDK initialized");
 }
 var app = (0, import_express.default)();
 var corsOptions = {
@@ -52480,6 +53604,15 @@ app.post(
   validateRequest(AlternativesRequestSchema),
   asyncHandler(alternativesHandler)
 );
+app.post(
+  "/v1/search/drugs",
+  asyncHandler(optionalAuth),
+  // Optional auth
+  asyncHandler(rateLimitMiddleware),
+  // Rate limiting: 30/min for auth, 10/min for anonymous
+  validateRequest(DrugSearchRequestSchema),
+  asyncHandler(searchDrugs)
+);
 app.get(
   "/v1/analytics/system",
   asyncHandler(verifyToken),
@@ -52502,7 +53635,7 @@ var api = functions.region("us-central1").runWith({
   memory: "512MB",
   timeoutSeconds: 60
 }).https.onRequest(app);
-logger17.info("NDC Calculator functions initialized with authentication");
+logger18.info("NDC Calculator functions initialized with authentication");
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   api

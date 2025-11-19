@@ -2,6 +2,7 @@
  * OpenAI Service
  * AI-enhanced NDC matching using GPT-4
  */
+import type { ChatCompletion, ChatCompletionCreateParamsNonStreaming } from 'openai/resources/chat/completions';
 import type { OpenAIServiceConfig, NDCRecommendationRequest, AIRecommendationResult, CircuitBreakerState } from './openaiTypes';
 /**
  * OpenAI Service
@@ -25,6 +26,18 @@ export declare class OpenAIService {
      * @returns True if available
      */
     isAvailable(): boolean;
+    /**
+     * Check if OpenAI is enabled (API key + feature flag)
+     * @returns True if OpenAI client initialized and feature enabled
+     */
+    isEnabled(): boolean;
+    /**
+     * Lightweight chat completion helper for other modules
+     * Reuses configured model unless overridden
+     */
+    chat(params: Omit<ChatCompletionCreateParamsNonStreaming, 'model'> & {
+        model?: string;
+    }): Promise<ChatCompletion>;
     /**
      * Calculate usage metrics and estimated cost
      * @param usage OpenAI usage data

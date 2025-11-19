@@ -21,3 +21,4 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./types"), exports);
 __exportStar(require("./calculate.schema"), exports);
 __exportStar(require("./alternatives.schema"), exports);
+__exportStar(require("./search.schema"), exports);

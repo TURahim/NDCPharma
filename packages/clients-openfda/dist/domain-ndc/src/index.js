@@ -26,3 +26,7 @@ __exportStar(require("./validation"), exports);
 __exportStar(require("./dosageForm"), exports);
 __exportStar(require("./concentrationParser"), exports);
 __exportStar(require("./liquidCalculator"), exports);
+// Drug Search & Ranking (PR-12A)
+__exportStar(require("./searchRanker"), exports);
+__exportStar(require("./searchGrouper"), exports);
+__exportStar(require("./searchFilters"), exports);

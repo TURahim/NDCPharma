@@ -396,11 +396,30 @@ export function filterByDosageForm(
 
 /**
  * Filter NDC packages by active status
+ * 
+ * SINGLE SOURCE OF TRUTH for activeOnly filtering.
+ * This is the ONLY place in the codebase where active/inactive filtering should occur.
+ * Domain-level filtering does NOT re-apply active/inactive filters.
+ * 
  * @param packages Array of NDC packages
  * @returns Only active packages
  */
 export function filterActivePackages(packages: NDCPackage[]): NDCPackage[] {
-  return packages.filter((pkg) => pkg.marketingStatus.isActive);
+  const beforeCount = packages.length;
+  const activePackages = packages.filter((pkg) => pkg.marketingStatus.isActive);
+  const afterCount = activePackages.length;
+  const removedCount = beforeCount - afterCount;
+
+  logger.debug('FDA Client: activeOnly filter applied', {
+    service: 'FDAClient',
+    beforeCount,
+    afterCount,
+    removedCount,
+    filterType: 'activeOnly',
+    note: 'Single source of truth - no additional active filtering downstream',
+  });
+
+  return activePackages;
 }
 
 /**

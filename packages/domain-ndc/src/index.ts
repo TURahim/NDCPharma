@@ -12,3 +12,8 @@ export * from "./dosageForm";
 export * from "./concentrationParser";
 export * from "./liquidCalculator";
 
+// Drug Search & Ranking (PR-12A)
+export * from "./searchRanker";
+export * from "./searchGrouper";
+export * from "./searchFilters";
+

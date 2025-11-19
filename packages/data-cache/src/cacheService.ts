@@ -371,3 +371,20 @@ export function createFDAValidationKey(ndc: string): string {
   return `fda:validate:${ndc.replace(/-/g, '')}`;
 }
 
+/**
+ * Create a cache key for drug search
+ * @param query Search query
+ * @param mode Search mode (simple/advanced)
+ * @param filters Search filters
+ * @returns Cache key
+ */
+export function createDrugSearchKey(
+  query: string,
+  mode: string,
+  filters?: Record<string, any>
+): string {
+  const normalizedQuery = query.toLowerCase().trim();
+  const filterString = filters ? JSON.stringify(filters) : '';
+  return `drug:search:${mode}:${normalizedQuery}:${filterString}`;
+}
+

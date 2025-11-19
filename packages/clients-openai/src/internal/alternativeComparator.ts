@@ -179,7 +179,14 @@ export async function compareAlternatives(
     return parsed;
     
   } catch (error) {
-    logger.error(`Error comparing alternatives: ${error}`, error as Error);
+    logger.error(
+      'Error comparing alternatives',
+      error as Error,
+      {
+        originalDrug: request.originalDrug,
+        alternativeCount: request.alternatives.length,
+      }
+    );
     
     // Return fallback response on error
     return generateFallbackResponse(request);

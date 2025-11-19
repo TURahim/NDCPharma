@@ -9,10 +9,11 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 
-import { CalculateRequestSchema, AlternativesRequestSchema } from '@api-contracts';
+import { CalculateRequestSchema, AlternativesRequestSchema, DrugSearchRequestSchema } from '@api-contracts';
 import { healthCheck } from './api/v1/health';
 import { calculateHandler } from './api/v1/calculate';
 import { alternativesHandler } from './api/v1/alternatives';
+import { searchDrugs } from './api/v1/search';
 import {
   getSystemAnalytics,
   getUserAnalytics,
@@ -92,6 +93,15 @@ app.post(
   asyncHandler(rateLimitMiddleware),
   validateRequest(AlternativesRequestSchema),
   asyncHandler(alternativesHandler)
+);
+
+// Drug search endpoint (optional authentication - allows both authenticated and anonymous users)
+app.post(
+  '/v1/search/drugs',
+  asyncHandler(optionalAuth), // Optional auth
+  asyncHandler(rateLimitMiddleware), // Rate limiting: 30/min for auth, 10/min for anonymous
+  validateRequest(DrugSearchRequestSchema),
+  asyncHandler(searchDrugs)
 );
 
 // Analytics endpoints (require authentication)

@@ -55,7 +55,9 @@ const envSchema = z.object({
     .default("true"),
 
   // Security
-  CORS_ALLOWED_ORIGINS: z.string().default("http://localhost:3000,https://ndc-pharma-functions-kr3j.vercel.app"),
+  CORS_ALLOWED_ORIGINS: z
+    .string()
+    .default("http://localhost:3000,http://localhost:3001,https://ndc-pharma-functions-kr3j.vercel.app"),
   JWT_EXPIRATION_HOURS: z
     .string()
     .transform(Number)

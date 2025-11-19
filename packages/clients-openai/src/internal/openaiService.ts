@@ -4,6 +4,10 @@
  */
 
 import OpenAI from 'openai';
+import type {
+  ChatCompletion,
+  ChatCompletionCreateParamsNonStreaming,
+} from 'openai/resources/chat/completions';
 import { createLogger } from '@core-guardrails';
 import { FEATURE_FLAGS } from '@core-config';
 import { SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, generateUserPrompt, validateResponseStructure } from './prompts';
@@ -227,6 +231,34 @@ export class OpenAIService {
       FEATURE_FLAGS.ENABLE_OPENAI &&
       this.circuitBreaker.state !== 'open'
     );
+  }
+
+  /**
+   * Check if OpenAI is enabled (API key + feature flag)
+   * @returns True if OpenAI client initialized and feature enabled
+   */
+  isEnabled(): boolean {
+    return this.client !== null && FEATURE_FLAGS.ENABLE_OPENAI;
+  }
+
+  /**
+   * Lightweight chat completion helper for other modules
+   * Reuses configured model unless overridden
+   */
+  async chat(
+    params: Omit<ChatCompletionCreateParamsNonStreaming, 'model'> & {
+      model?: string;
+    }
+  ): Promise<ChatCompletion> {
+    if (!this.isAvailable()) {
+      throw new Error('OpenAI service is not available');
+    }
+
+    const model = params.model || this.config.model;
+    return this.client!.chat.completions.create({
+      ...params,
+      model,
+    });
   }
 
   /**

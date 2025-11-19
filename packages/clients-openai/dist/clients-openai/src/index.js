@@ -4,7 +4,7 @@
  * Public API for AI-enhanced NDC recommendations
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.detectPHI = exports.sanitizeForAI = exports.validateResponseStructure = exports.generateUserPrompt = exports.FEW_SHOT_EXAMPLES = exports.SYSTEM_PROMPT = exports.ndcRecommender = exports.NDCRecommender = exports.openaiService = exports.OpenAIService = void 0;
+exports.compareAlternatives = exports.detectPHI = exports.sanitizeForAI = exports.validateResponseStructure = exports.generateUserPrompt = exports.FEW_SHOT_EXAMPLES = exports.SYSTEM_PROMPT = exports.ndcRecommender = exports.NDCRecommender = exports.openaiService = exports.OpenAIService = void 0;
 const openaiService_1 = require("./internal/openaiService");
 Object.defineProperty(exports, "OpenAIService", { enumerable: true, get: function () { return openaiService_1.OpenAIService; } });
 Object.defineProperty(exports, "openaiService", { enumerable: true, get: function () { return openaiService_1.openaiService; } });
@@ -21,3 +21,6 @@ Object.defineProperty(exports, "validateResponseStructure", { enumerable: true, 
 var phiSanitizer_1 = require("./internal/phiSanitizer");
 Object.defineProperty(exports, "sanitizeForAI", { enumerable: true, get: function () { return phiSanitizer_1.sanitizeForAI; } });
 Object.defineProperty(exports, "detectPHI", { enumerable: true, get: function () { return phiSanitizer_1.detectPHI; } });
+// Export alternative comparator
+var alternativeComparator_1 = require("./internal/alternativeComparator");
+Object.defineProperty(exports, "compareAlternatives", { enumerable: true, get: function () { return alternativeComparator_1.compareAlternatives; } });

@@ -152,6 +152,30 @@ export declare class FDAClient {
         activeOnly?: boolean;
         dosageForm?: string;
     }): Promise<NDCPackage[]>;
+    /**
+     * Get NDC packages by batch list of RxCUIs (NEW - PR-12B)
+     * Returns detailed package information for each RxCUI with full metadata
+     * Useful for search result enrichment with manufacturer, brand names, etc.
+     *
+     * @param rxcuiList Array of RxCUIs
+     * @param options Search options (limit per RxCUI, activeOnly, dosageForm)
+     * @returns Array of NDC packages with full metadata
+     *
+     * @example
+     * ```typescript
+     * const rxcuis = ['104377', '197446', '198439'];
+     * const packages = await fdaClient.getDetailedPackagesByRxCUIList(rxcuis, {
+     *   activeOnly: true,
+     *   limitPerRxCUI: 5
+     * });
+     * // Returns packages with manufacturer, brand/generic names, marketing status
+     * ```
+     */
+    getDetailedPackagesByRxCUIList(rxcuiList: string[], options?: {
+        limitPerRxCUI?: number;
+        activeOnly?: boolean;
+        dosageForm?: string;
+    }): Promise<NDCPackage[]>;
 }
 export declare const fdaClient: FDAClient;
 export type { NDCPackage, NDCDetails, NDCValidationResult, FDAServiceConfig, PackageSize, ActiveIngredient, MarketingStatus, } from './internal/fdaTypes';

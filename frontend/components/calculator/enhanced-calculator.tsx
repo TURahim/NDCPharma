@@ -6,10 +6,9 @@
  */
 
 import { useState } from 'react';
-import { Wand2 } from 'lucide-react';
+import { Wand2, Search } from 'lucide-react';
 import { calculateNDC, APIError, getAlternativeDrugs } from '@/lib/api-client';
 import { CalculateResponse, AlternativeDrug } from '@/types/api';
-import { DrugAutocomplete } from '@/components/ui/drug-autocomplete';
 import { Button } from '@/components/ui/button';
 import { StatusIndicators } from '@/components/dashboard/status-indicators';
 import { AIInsightsPanel } from '@/components/calculator/ai-insights-panel';
@@ -18,10 +17,12 @@ import { HelpPopover } from '@/components/ui/help-popover';
 import { GuidedMode } from '@/components/calculator/guided-mode';
 import { AlternativeDrugsModal } from '@/components/calculator/alternative-drugs-modal';
 import { DrugComparisonView } from '@/components/calculator/drug-comparison-view';
+import { MedicationSearchModal } from '@/components/calculator/medication-search-modal';
 import { CalculationStorage } from '@/lib/calculation-storage';
 import { generateId } from '@/lib/calculation-storage';
 import { StoredCalculation } from '@/types/calculation';
 import { useAuth } from '@/lib/auth-context';
+import type { DrugSearchResult } from '@/lib/search-client';
 
 interface EnhancedCalculatorProps {
   initialData?: Partial<StoredCalculation>;
@@ -40,6 +41,7 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
   const [error, setError] = useState<string | null>(null);
   
   const [showGuidedMode, setShowGuidedMode] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   
   // Alternatives state
   const [showAlternativesModal, setShowAlternativesModal] = useState(false);
@@ -202,6 +204,12 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
     }, 100);
   };
 
+  const handleDrugSelect = (drug: DrugSearchResult) => {
+    setDrugInput(drug.name);
+    setSelectedRxcui(drug.rxcui);
+    setShowSearchModal(false);
+  };
+
   return (
     <>
       <div className="space-y-6">
@@ -235,21 +243,34 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
                 <label htmlFor="drug" className="block text-sm font-medium text-gray-700 mb-2">
                   Medication <span className="text-red-500">*</span>
                 </label>
-                <DrugAutocomplete
-                  value={drugInput}
-                  onChange={(value, rxcui) => {
-                    setDrugInput(value);
-                    if (rxcui) {
-                      setSelectedRxcui(rxcui);
-                    }
-                  }}
-                  onSelect={(result) => {
-                    setDrugInput(result.name);
-                    setSelectedRxcui(result.rxcui);
-                  }}
-                  placeholder="Start typing drug name (e.g., Lisinopril, Metformin)"
-                  disabled={isLoading}
-                />
+                <div className="flex gap-2">
+                  <div className="flex-1 relative">
+                    <input
+                      id="drug"
+                      type="text"
+                      value={drugInput}
+                      readOnly
+                      placeholder="Click search to select medication"
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg bg-gray-50 cursor-pointer"
+                      onClick={() => setShowSearchModal(true)}
+                    />
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setShowSearchModal(true)}
+                    disabled={isLoading}
+                    className="gap-2"
+                  >
+                    <Search className="h-4 w-4" />
+                    Search
+                  </Button>
+                </div>
+                {selectedRxcui && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    RxCUI: {selectedRxcui}
+                  </p>
+                )}
               </div>
 
               {/* SIG Input */}
@@ -427,6 +448,14 @@ export function EnhancedCalculator({ initialData }: EnhancedCalculatorProps = {}
           }}
         />
       )}
+
+      {/* Medication Search Modal */}
+      <MedicationSearchModal
+        open={showSearchModal}
+        onOpenChange={setShowSearchModal}
+        onSelectDrug={handleDrugSelect}
+        initialQuery={drugInput}
+      />
     </>
   );
 }

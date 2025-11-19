@@ -190,6 +190,27 @@ class OpenAIService {
             this.circuitBreaker.state !== 'open');
     }
     /**
+     * Check if OpenAI is enabled (API key + feature flag)
+     * @returns True if OpenAI client initialized and feature enabled
+     */
+    isEnabled() {
+        return this.client !== null && _core_config_1.FEATURE_FLAGS.ENABLE_OPENAI;
+    }
+    /**
+     * Lightweight chat completion helper for other modules
+     * Reuses configured model unless overridden
+     */
+    async chat(params) {
+        if (!this.isAvailable()) {
+            throw new Error('OpenAI service is not available');
+        }
+        const model = params.model || this.config.model;
+        return this.client.chat.completions.create({
+            ...params,
+            model,
+        });
+    }
+    /**
      * Calculate usage metrics and estimated cost
      * @param usage OpenAI usage data
      * @param latency Request latency

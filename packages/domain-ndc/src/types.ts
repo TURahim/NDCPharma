@@ -119,3 +119,104 @@ export enum DosageFormType {
   SPECIAL = 'SPECIAL',
 }
 
+/**
+ * Badge types for drug search results
+ */
+export type DrugBadgeType = 'ACTIVE' | 'COMMON' | 'PEDIATRIC' | 'GENERIC' | 'BRAND';
+
+/**
+ * Badge variant for styling
+ */
+export type DrugBadgeVariant = 'success' | 'info' | 'warning';
+
+/**
+ * Badge for drug search results
+ */
+export interface DrugBadge {
+  /** Type of badge */
+  type: DrugBadgeType;
+  /** Display label */
+  label: string;
+  /** Visual variant */
+  variant: DrugBadgeVariant;
+}
+
+/**
+ * Drug search result with ranking and metadata
+ */
+export interface DrugSearchResult {
+  /** RxNorm Concept Unique Identifier */
+  rxcui: string;
+  /** Drug name */
+  name: string;
+  /** Strength (e.g., "500 MG") */
+  strength: string;
+  /** Dosage form (e.g., "TABLET") */
+  dosageForm: string;
+  /** Dosage form family category */
+  dosageFormFamily: DosageFormType;
+  /** Whether this drug has active NDCs */
+  hasActiveNDCs: boolean;
+  /** Total number of NDC packages */
+  ndcCount: number;
+  /** Common usage score (0-100) */
+  commonUsageScore: number;
+  /** Status badges */
+  badges: DrugBadge[];
+  /** Term type (e.g., "SCD", "SBD") */
+  tty?: string;
+  /** Brief description */
+  description?: string;
+}
+
+/**
+ * Dosage form group for simple search view
+ */
+export interface DosageFormGroup {
+  /** Dosage form label (e.g., "Tablet") */
+  dosageForm: string;
+  /** Dosage form family */
+  dosageFormFamily: DosageFormType;
+  /** Drug results in this group */
+  results: DrugSearchResult[];
+  /** Whether this group is expanded */
+  expanded: boolean;
+}
+
+/**
+ * Grouped search results for simple mode
+ */
+export interface GroupedSearchResults {
+  /** Groups of results by dosage form */
+  dosageFormGroups: DosageFormGroup[];
+  /** Total number of results (before grouping) */
+  totalResults: number;
+  /** Whether there are inactive results not shown */
+  hasInactiveResults: boolean;
+}
+
+/**
+ * Ranking factors for search result scoring
+ */
+export interface SearchRankingFactors {
+  /** Has active NDCs (weight: 50) */
+  hasActiveNDCs: number;
+  /** Is generic drug (weight: 20) */
+  isGeneric: number;
+  /** Common strength score (weight: 15) */
+  strengthCommonality: number;
+  /** Common form score (weight: 10) */
+  formCommonality: number;
+  /** Recency score (weight: 5) */
+  recencyScore: number;
+}
+
+/**
+ * Availability state for search results
+ */
+export type AvailabilityState =
+  | 'ACTIVE_FOUND'      // Active formulations found
+  | 'ONLY_INACTIVE'     // Only inactive formulations available
+  | 'NO_FDA_NDCS'       // Drug exists clinically but has no FDA-listed NDCs
+  | 'NOT_FOUND';        // No matching drug found
+

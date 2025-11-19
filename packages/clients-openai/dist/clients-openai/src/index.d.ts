@@ -10,4 +10,5 @@ export type { NDCRecommendationRequest, NDCRecommendationResponse, OpenAIService
 export type { PackageRecommendation, EnhancedRecommendationResult, } from './internal/recommender';
 export { SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, generateUserPrompt, validateResponseStructure, } from './internal/prompts';
 export { sanitizeForAI, detectPHI, } from './internal/phiSanitizer';
+export { compareAlternatives, type DrugComparisonRequest, type DrugComparisonResponse, type AlternativeComparison, } from './internal/alternativeComparator';
 //# sourceMappingURL=index.d.ts.map

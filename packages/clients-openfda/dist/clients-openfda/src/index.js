@@ -298,6 +298,44 @@ class FDAClient {
         }
         return (0, fdaMapper_1.sortByPackageSize)(packages);
     }
+    /**
+     * Get NDC packages by batch list of RxCUIs (NEW - PR-12B)
+     * Returns detailed package information for each RxCUI with full metadata
+     * Useful for search result enrichment with manufacturer, brand names, etc.
+     *
+     * @param rxcuiList Array of RxCUIs
+     * @param options Search options (limit per RxCUI, activeOnly, dosageForm)
+     * @returns Array of NDC packages with full metadata
+     *
+     * @example
+     * ```typescript
+     * const rxcuis = ['104377', '197446', '198439'];
+     * const packages = await fdaClient.getDetailedPackagesByRxCUIList(rxcuis, {
+     *   activeOnly: true,
+     *   limitPerRxCUI: 5
+     * });
+     * // Returns packages with manufacturer, brand/generic names, marketing status
+     * ```
+     */
+    async getDetailedPackagesByRxCUIList(rxcuiList, options = {}) {
+        if (!rxcuiList || rxcuiList.length === 0) {
+            return [];
+        }
+        const allPackages = [];
+        // Fetch packages for each RxCUI (in parallel for performance)
+        const results = await Promise.allSettled(rxcuiList.map((rxcui) => this.getNDCsByRxCUI(rxcui, {
+            limit: options.limitPerRxCUI || 100,
+            activeOnly: options.activeOnly,
+            dosageForm: options.dosageForm,
+        })));
+        // Collect successful results
+        for (const result of results) {
+            if (result.status === 'fulfilled' && result.value) {
+                allPackages.push(...result.value);
+            }
+        }
+        return (0, fdaMapper_1.sortByPackageSize)(allPackages);
+    }
 }
 exports.FDAClient = FDAClient;
 // Export singleton instance
