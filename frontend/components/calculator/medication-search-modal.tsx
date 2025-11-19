@@ -19,6 +19,7 @@ import type { DrugSearchResult } from '@/lib/search-client';
 import { getAvailabilityStateMessage } from '@/lib/search-client';
 import { SimpleSearchResults, SimpleSearchResultsSkeleton } from './simple-search-results';
 import { AdvancedSearchTable, AdvancedSearchTableSkeleton } from './advanced-search-table';
+import { EnhancedAdvancedTable, EnhancedAdvancedTableSkeleton } from './enhanced-advanced-table';
 import { SearchErrorBoundary } from './search-error-boundary';
 import { SearchErrorDisplay, AvailabilityMessageDisplay } from './search-error-display';
 import {
@@ -257,7 +258,7 @@ export function MedicationSearchModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] max-w-4xl overflow-hidden p-0">
+      <DialogContent className="max-h-[90vh] max-w-7xl overflow-hidden p-0">
         <SearchErrorBoundary onReset={clearResults}>
           <div className="flex h-full flex-col">
           {/* Header */}
@@ -339,7 +340,7 @@ export function MedicationSearchModal({
             {showLoading && isSimple && <SimpleSearchResultsSkeleton />}
 
             {/* Loading State - Advanced Mode */}
-            {showLoading && !isSimple && <AdvancedSearchTableSkeleton />}
+            {showLoading && !isSimple && <EnhancedAdvancedTableSkeleton />}
 
             {/* Empty State */}
             {showEmpty && (
@@ -363,12 +364,29 @@ export function MedicationSearchModal({
               />
             )}
 
-            {/* Results - Advanced Mode */}
+            {/* Results - Advanced Mode (Enhanced Pharmacy-Grade View) */}
             {showResults && !isSimple && (
-              <AdvancedSearchTable
+              <EnhancedAdvancedTable
                 results={results}
-                onSelectDrug={handleSelectDrug}
-                selectedDrug={selectedDrug}
+                onSelectPackage={(pkg) => {
+                  // Convert enhanced package back to DrugSearchResult for selection
+                  // TODO: Update parent components to work with EnhancedDrugPackage
+                  const legacyResult: DrugSearchResult = {
+                    rxcui: pkg.rxcui,
+                    name: pkg.genericName,
+                    strength: pkg.strength,
+                    dosageForm: pkg.dosageForm,
+                    dosageFormFamily: pkg.dosageFormFamily,
+                    hasActiveNDCs: pkg.marketingStatus.isActive,
+                    ndcCount: 1, // Single package
+                    commonUsageScore: pkg.commonUsageScore || 0,
+                    badges: [],
+                    tty: pkg.tty,
+                    description: pkg.packageDescription,
+                  };
+                  handleSelectDrug(legacyResult);
+                }}
+                selectedPackage={undefined}
               />
             )}
           </div>
