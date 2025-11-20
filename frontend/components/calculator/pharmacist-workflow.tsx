@@ -1,23 +1,23 @@
-"use client"
+"use client";
 
 /**
  * Pharmacist Workflow Container
  * Main orchestrator for the guided workflow
  */
 
-import React from 'react';
-import { WorkflowProvider, useWorkflow } from '@/lib/workflow-context';
-import { WorkflowStepper, CompactProgress } from './workflow-stepper';
-import { WorkflowNavigation, StickyNavigation } from './workflow-navigation';
-import { WorkflowStep } from '@/types/workflow';
-import { Button } from '@/components/ui/button';
+import React from "react";
+import { WorkflowProvider, useWorkflow } from "@/lib/workflow-context";
+import { WorkflowStepper, CompactProgress } from "./workflow-stepper";
+import { WorkflowNavigation, StickyNavigation } from "./workflow-navigation";
+import { WorkflowStep } from "@/types/workflow";
+import { Button } from "@/components/ui/button";
 
 // Step components
-import { DrugSearchStep } from './steps/drug-search-step';
-import { ChoosePackageStep } from '@/components/workflow/choose-package-step';
-import { SIGEntryStep } from './steps/sig-entry-step';
-import { QuantityReviewStep } from './steps/quantity-review-step';
-import { ConfirmationStep } from './steps/confirmation-step';
+import { DrugSearchStep } from "./steps/drug-search-step";
+import { ChoosePackageStep } from "@/components/workflow/choose-package-step";
+import { SIGEntryStep } from "./steps/sig-entry-step";
+import { QuantityReviewStep } from "./steps/quantity-review-step";
+import { ConfirmationStep } from "./steps/confirmation-step";
 
 /**
  * Workflow Content Component
@@ -32,11 +32,16 @@ function WorkflowContent() {
     goPrevious,
     goToStep,
     resetWorkflow,
+    navigationState,
   } = useWorkflow();
 
   const handleReset = () => {
     const shouldReset =
-      typeof window === 'undefined' ? true : window.confirm('Reset the current workflow? This will clear your selections.');
+      typeof window === "undefined"
+        ? true
+        : window.confirm(
+            "Reset the current workflow? This will clear your selections.",
+          );
 
     if (!shouldReset) {
       return;
@@ -44,7 +49,7 @@ function WorkflowContent() {
 
     resetWorkflow();
   };
-  
+
   const renderStep = () => {
     switch (state.currentStep) {
       case WorkflowStep.DRUG_SEARCH:
@@ -61,12 +66,12 @@ function WorkflowContent() {
         return <div>Unknown step</div>;
     }
   };
-  
+
   const isChoosePackageStep = state.currentStep === WorkflowStep.CHOOSE_PACKAGE;
-  const contentWidthClass = isChoosePackageStep ? 'max-w-7xl' : 'max-w-4xl';
+  const contentWidthClass = isChoosePackageStep ? "max-w-7xl" : "max-w-4xl";
   const contentCardClass = isChoosePackageStep
-    ? ''
-    : 'bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-gray-200';
+    ? ""
+    : "bg-white rounded-2xl shadow-xl p-6 md:p-8 border border-gray-200";
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
@@ -92,12 +97,12 @@ function WorkflowContent() {
           </div>
         </div>
       </div>
-      
+
       {/* Main content area */}
       <div className="container mx-auto px-4 py-8">
         <div className={`${contentWidthClass} mx-auto`}>
           <div className={contentCardClass}>{renderStep()}</div>
-          
+
           {!isChoosePackageStep && (
             <div className="hidden sm:block mt-6">
               <WorkflowNavigation
@@ -106,12 +111,13 @@ function WorkflowContent() {
                 canGoPrevious={canGoPrevious}
                 onNext={goNext}
                 onPrevious={goPrevious}
+                isLoading={navigationState?.isLoading}
               />
             </div>
           )}
         </div>
       </div>
-      
+
       {/* Sticky navigation (mobile only) */}
       {!isChoosePackageStep && (
         <div className="block sm:hidden">
@@ -121,6 +127,7 @@ function WorkflowContent() {
             canGoPrevious={canGoPrevious}
             onNext={goNext}
             onPrevious={goPrevious}
+            isLoading={navigationState?.isLoading}
           />
         </div>
       )}
@@ -138,4 +145,3 @@ export function PharmacistWorkflow() {
     </WorkflowProvider>
   );
 }
-

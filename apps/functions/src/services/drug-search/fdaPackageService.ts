@@ -1,9 +1,9 @@
-import { fdaClient, type NDCPackage } from '@clients-openfda';
-import { createLogger } from '@core-guardrails';
-import type { PackageRetrievalResult } from './types';
-import { createSearchError } from './errors';
+import { fdaClient, type NDCPackage } from "@clients-openfda";
+import { createLogger } from "@core-guardrails";
+import type { PackageRetrievalResult } from "./types";
+import { createSearchError } from "./errors";
 
-const logger = createLogger({ service: 'DrugSearch.FDAService' });
+const logger = createLogger({ service: "DrugSearch.FDAService" });
 const PAGE_SIZE = 100;
 const MAX_PAGES = 20; // safety guard (2000 packages)
 
@@ -52,11 +52,11 @@ function collectMetadata(packages: NDCPackage[]): {
 
 export async function fetchFdaPackagesForRxcui(
   rxcui: string,
-  genericName?: string
+  genericName?: string,
 ): Promise<PackageRetrievalResult> {
-  logger.info('Fetching FDA packages', { rxcui, genericName });
+  logger.info("Fetching FDA packages", { rxcui, genericName });
 
-  let allPackages: NDCPackage[] = [];
+  const allPackages: NDCPackage[] = [];
   let usedFallback = false;
 
   try {
@@ -83,7 +83,7 @@ export async function fetchFdaPackagesForRxcui(
       }
     }
 
-    logger.info('FDA packages retrieved via RxCUI', {
+    logger.info("FDA packages retrieved via RxCUI", {
       rxcui,
       totalPackages: allPackages.length,
       pagesFetched: page,
@@ -91,7 +91,7 @@ export async function fetchFdaPackagesForRxcui(
   } catch (error: any) {
     // If FDA RxCUI search fails with 404, try generic name fallback
     if (error?.status === 404 && genericName) {
-      logger.warn('RxCUI search failed, attempting generic name fallback', {
+      logger.warn("RxCUI search failed, attempting generic name fallback", {
         rxcui,
         genericName,
         error: error.message,
@@ -122,40 +122,46 @@ export async function fetchFdaPackagesForRxcui(
 
         usedFallback = true;
 
-        logger.info('FDA packages retrieved via generic name fallback', {
+        logger.info("FDA packages retrieved via generic name fallback", {
           genericName,
           totalPackages: allPackages.length,
           pagesFetched: page,
         });
       } catch (fallbackError: any) {
-        logger.error('Generic name fallback also failed', fallbackError as Error, {
-          genericName,
-          rxcui,
-        });
+        logger.error(
+          "Generic name fallback also failed",
+          fallbackError as Error,
+          {
+            genericName,
+            rxcui,
+          },
+        );
 
         throw createSearchError(
-          'FDA_LOOKUP_FAILED',
+          "FDA_LOOKUP_FAILED",
           `FDA did not return any packages for "${genericName}". The drug may not be available in the FDA database.`,
-          { rxcui, genericName, originalError: error.message }
+          { rxcui, genericName, originalError: error.message },
         );
       }
     } else {
       // FDA error without fallback option
-      logger.error('FDA lookup failed without fallback', error as Error, { rxcui });
+      logger.error("FDA lookup failed without fallback", error as Error, {
+        rxcui,
+      });
 
       throw createSearchError(
-        'FDA_LOOKUP_FAILED',
-        'Unable to retrieve packages from FDA NDC Directory.',
-        { rxcui, error: error.message }
+        "FDA_LOOKUP_FAILED",
+        "Unable to retrieve packages from FDA NDC Directory.",
+        { rxcui, error: error.message },
       );
     }
   }
 
   if (!allPackages.length) {
     throw createSearchError(
-      'NO_PACKAGES_FOUND',
-      'No packages found in FDA NDC Directory for this drug.',
-      { rxcui, genericName, usedFallback }
+      "NO_PACKAGES_FOUND",
+      "No packages found in FDA NDC Directory for this drug.",
+      { rxcui, genericName, usedFallback },
     );
   }
 
@@ -172,4 +178,3 @@ export async function fetchFdaPackagesForRxcui(
     uniqueForms: metadata.forms,
   };
 }
-

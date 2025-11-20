@@ -3,10 +3,17 @@
  * Handles communication with Firebase Cloud Functions backend
  */
 
-import { CalculateRequest, CalculateResponse, AlternativeResponse, NDCPackage } from '@/types/api';
+import {
+  CalculateRequest,
+  CalculateResponse,
+  AlternativeResponse,
+  NDCPackage,
+  ParsedSig,
+} from "@/types/api";
 
 const API_URL =
-  process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001/ndcpharma-8f3c6/us-central1/api';
+  process.env.NEXT_PUBLIC_API_URL ||
+  "http://localhost:5001/ndcpharma-8f3c6/us-central1/api";
 
 /**
  * Safely parse JSON responses. If the body is HTML (e.g., Firebase 404 page),
@@ -60,34 +67,63 @@ export interface SearchDrugResponse {
   };
 }
 
+/**
+ * Free-text SIG parsing
+ */
+export interface ParseSigRequest {
+  sigText: string;
+  daysSupply: number;
+  drugContext?: {
+    rxcui?: string;
+    genericName?: string;
+    brandName?: string;
+    dosageForm?: string;
+    strength?: string;
+    route?: string;
+  };
+}
+
+export interface ParseSigResponse {
+  success: boolean;
+  data?: {
+    parsed: ParsedSig;
+    warnings?: string[];
+  };
+  error?: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+}
+
 export class APIError extends Error {
   constructor(
     message: string,
     public code: string,
     public statusCode: number,
-    public details?: unknown
+    public details?: unknown,
   ) {
     super(message);
-    this.name = 'APIError';
+    this.name = "APIError";
   }
 }
 
 export async function calculateNDC(
   request: CalculateRequest,
-  idToken: string | null
+  idToken: string | null,
 ): Promise<CalculateResponse> {
   try {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     };
 
     // Add authorization header if token is available
     if (idToken) {
-      headers['Authorization'] = `Bearer ${idToken}`;
+      headers["Authorization"] = `Bearer ${idToken}`;
     }
 
     const response = await fetch(`${API_URL}/v1/calculate`, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify(request),
     });
@@ -96,40 +132,40 @@ export async function calculateNDC(
 
     // Handle rate limiting
     if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After');
+      const retryAfter = response.headers.get("Retry-After");
       throw new APIError(
-        data.error?.message || 'Rate limit exceeded. Please try again later.',
-        'RATE_LIMIT_EXCEEDED',
+        data.error?.message || "Rate limit exceeded. Please try again later.",
+        "RATE_LIMIT_EXCEEDED",
         429,
-        { retryAfter: retryAfter ? parseInt(retryAfter) : null }
+        { retryAfter: retryAfter ? parseInt(retryAfter) : null },
       );
     }
 
     // Handle authentication errors
     if (response.status === 401) {
       throw new APIError(
-        'Authentication required. Please sign in again.',
-        'UNAUTHORIZED',
-        401
+        "Authentication required. Please sign in again.",
+        "UNAUTHORIZED",
+        401,
       );
     }
 
     // Handle validation errors
     if (response.status === 400) {
       throw new APIError(
-        data.error?.message || 'Invalid request. Please check your input.',
-        data.error?.code || 'VALIDATION_ERROR',
+        data.error?.message || "Invalid request. Please check your input.",
+        data.error?.code || "VALIDATION_ERROR",
         400,
-        data.error?.details
+        data.error?.details,
       );
     }
 
     // Handle server errors
     if (response.status === 500) {
       throw new APIError(
-        data.error?.message || 'Server error. Please try again later.',
-        data.error?.code || 'SERVER_ERROR',
-        500
+        data.error?.message || "Server error. Please try again later.",
+        data.error?.code || "SERVER_ERROR",
+        500,
       );
     }
 
@@ -137,13 +173,17 @@ export async function calculateNDC(
     if (!response.ok) {
       const defaultMessage =
         response.status === 404 && !data.error?.message
-          ? 'API route not found. Please verify your API deployment and NEXT_PUBLIC_API_URL.'
-          : data.error?.message || data.rawResponse || 'An unexpected error occurred';
+          ? "API route not found. Please verify your API deployment and NEXT_PUBLIC_API_URL."
+          : data.error?.message ||
+            data.rawResponse ||
+            "An unexpected error occurred";
       throw new APIError(
         defaultMessage,
-        data.error?.code || 'UNKNOWN_ERROR',
+        data.error?.code || "UNKNOWN_ERROR",
         response.status,
-        data.rawResponse ? { rawResponse: data.rawResponse } : data.error?.details
+        data.rawResponse
+          ? { rawResponse: data.rawResponse }
+          : data.error?.details,
       );
     }
 
@@ -155,19 +195,19 @@ export async function calculateNDC(
     }
 
     // Handle network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
+    if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new APIError(
-        'Network error. Please check your connection and try again.',
-        'NETWORK_ERROR',
-        0
+        "Network error. Please check your connection and try again.",
+        "NETWORK_ERROR",
+        0,
       );
     }
 
     // Handle other errors
     throw new APIError(
-      error instanceof Error ? error.message : 'An unexpected error occurred',
-      'UNKNOWN_ERROR',
-      0
+      error instanceof Error ? error.message : "An unexpected error occurred",
+      "UNKNOWN_ERROR",
+      0,
     );
   }
 }
@@ -178,20 +218,20 @@ export async function calculateNDC(
  */
 export async function searchDrug(
   request: SearchDrugRequest,
-  idToken: string | null
+  idToken: string | null,
 ): Promise<SearchDrugResponse> {
   try {
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     };
 
     // Add authorization header if token is available
     if (idToken) {
-      headers['Authorization'] = `Bearer ${idToken}`;
+      headers["Authorization"] = `Bearer ${idToken}`;
     }
 
     const response = await fetch(`${API_URL}/v1/search`, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify(request),
     });
@@ -200,50 +240,50 @@ export async function searchDrug(
 
     // Handle rate limiting
     if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After');
+      const retryAfter = response.headers.get("Retry-After");
       throw new APIError(
-        data.error?.message || 'Rate limit exceeded. Please try again later.',
-        'RATE_LIMIT_EXCEEDED',
+        data.error?.message || "Rate limit exceeded. Please try again later.",
+        "RATE_LIMIT_EXCEEDED",
         429,
-        { retryAfter: retryAfter ? parseInt(retryAfter) : null }
+        { retryAfter: retryAfter ? parseInt(retryAfter) : null },
       );
     }
 
     // Handle authentication errors
     if (response.status === 401) {
       throw new APIError(
-        'Authentication required. Please sign in again.',
-        'UNAUTHORIZED',
-        401
+        "Authentication required. Please sign in again.",
+        "UNAUTHORIZED",
+        401,
       );
     }
 
     // Handle drug not found
     if (response.status === 404) {
       throw new APIError(
-        data.error?.message || 'Drug not found',
-        data.error?.code || 'DRUG_NOT_FOUND',
+        data.error?.message || "Drug not found",
+        data.error?.code || "DRUG_NOT_FOUND",
         404,
-        data.error?.details
+        data.error?.details,
       );
     }
 
     // Handle validation errors
     if (response.status === 400) {
       throw new APIError(
-        data.error?.message || 'Invalid request. Please check your input.',
-        data.error?.code || 'VALIDATION_ERROR',
+        data.error?.message || "Invalid request. Please check your input.",
+        data.error?.code || "VALIDATION_ERROR",
         400,
-        data.error?.details
+        data.error?.details,
       );
     }
 
     // Handle server errors
     if (response.status === 500) {
       throw new APIError(
-        data.error?.message || 'Server error. Please try again later.',
-        data.error?.code || 'SERVER_ERROR',
-        500
+        data.error?.message || "Server error. Please try again later.",
+        data.error?.code || "SERVER_ERROR",
+        500,
       );
     }
 
@@ -251,13 +291,17 @@ export async function searchDrug(
     if (!response.ok) {
       const defaultMessage =
         response.status === 404 && !data.error?.message
-          ? 'API route not found. Please verify your API deployment and NEXT_PUBLIC_API_URL.'
-          : data.error?.message || data.rawResponse || 'An unexpected error occurred';
+          ? "API route not found. Please verify your API deployment and NEXT_PUBLIC_API_URL."
+          : data.error?.message ||
+            data.rawResponse ||
+            "An unexpected error occurred";
       throw new APIError(
         defaultMessage,
-        data.error?.code || 'UNKNOWN_ERROR',
+        data.error?.code || "UNKNOWN_ERROR",
         response.status,
-        data.rawResponse ? { rawResponse: data.rawResponse } : data.error?.details
+        data.rawResponse
+          ? { rawResponse: data.rawResponse }
+          : data.error?.details,
       );
     }
 
@@ -269,19 +313,119 @@ export async function searchDrug(
     }
 
     // Handle network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
+    if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new APIError(
-        'Network error. Please check your connection and try again.',
-        'NETWORK_ERROR',
-        0
+        "Network error. Please check your connection and try again.",
+        "NETWORK_ERROR",
+        0,
       );
     }
 
     // Handle other errors
     throw new APIError(
-      error instanceof Error ? error.message : 'An unexpected error occurred',
-      'UNKNOWN_ERROR',
-      0
+      error instanceof Error ? error.message : "An unexpected error occurred",
+      "UNKNOWN_ERROR",
+      0,
+    );
+  }
+}
+
+/**
+ * Parse free-text SIG using backend AI pipeline
+ */
+export async function parseFreeTextSig(
+  request: ParseSigRequest,
+  idToken: string | null,
+): Promise<ParseSigResponse> {
+  try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+
+    if (idToken) {
+      headers["Authorization"] = `Bearer ${idToken}`;
+    }
+
+    // TODO: Confirm the final path once the SIG parser endpoint is finalized.
+    const response = await fetch(`${API_URL}/v1/sig/parse`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+    });
+
+    const data = await parseJsonSafe(response);
+
+    if (response.status === 429) {
+      const retryAfter = response.headers.get("Retry-After");
+      throw new APIError(
+        data.error?.message || "Rate limit exceeded. Please try again later.",
+        "RATE_LIMIT_EXCEEDED",
+        429,
+        { retryAfter: retryAfter ? parseInt(retryAfter) : null },
+      );
+    }
+
+    if (response.status === 401) {
+      throw new APIError(
+        "Authentication required. Please sign in again.",
+        "UNAUTHORIZED",
+        401,
+      );
+    }
+
+    if (response.status === 400) {
+      throw new APIError(
+        data.error?.message ||
+          "Invalid SIG. Please verify the directions and try again.",
+        data.error?.code || "VALIDATION_ERROR",
+        400,
+        data.error?.details,
+      );
+    }
+
+    if (response.status === 500) {
+      throw new APIError(
+        data.error?.message || "Server error while parsing SIG.",
+        data.error?.code || "SERVER_ERROR",
+        500,
+      );
+    }
+
+    if (!response.ok) {
+      const defaultMessage =
+        response.status === 404 && !data.error?.message
+          ? "SIG parser route not found. Verify backend deployment."
+          : data.error?.message ||
+            data.rawResponse ||
+            "An unexpected error occurred while parsing the SIG.";
+      throw new APIError(
+        defaultMessage,
+        data.error?.code || "UNKNOWN_ERROR",
+        response.status,
+        data.rawResponse
+          ? { rawResponse: data.rawResponse }
+          : data.error?.details,
+      );
+    }
+
+    return data;
+  } catch (error) {
+    if (error instanceof APIError) {
+      throw error;
+    }
+
+    if (error instanceof TypeError && error.message.includes("fetch")) {
+      throw new APIError(
+        "Network error. Please check your connection and try again.",
+        "NETWORK_ERROR",
+        0,
+      );
+    }
+
+    throw new APIError(
+      error instanceof Error ? error.message : "An unexpected error occurred",
+      "UNKNOWN_ERROR",
+      0,
     );
   }
 }
@@ -292,24 +436,24 @@ export async function searchDrug(
  */
 export async function getAlternativeDrugs(
   drug: { name: string; rxcui: string },
-  idToken: string | null
+  idToken: string | null,
 ): Promise<AlternativeResponse> {
   try {
     if (!idToken) {
       throw new APIError(
-        'Authentication required to access drug alternatives',
-        'UNAUTHORIZED',
-        401
+        "Authentication required to access drug alternatives",
+        "UNAUTHORIZED",
+        401,
       );
     }
 
     const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${idToken}`,
     };
 
     const response = await fetch(`${API_URL}/v1/alternatives`, {
-      method: 'POST',
+      method: "POST",
       headers,
       body: JSON.stringify({ drug }),
     });
@@ -318,49 +462,49 @@ export async function getAlternativeDrugs(
 
     // Handle rate limiting
     if (response.status === 429) {
-      const retryAfter = response.headers.get('Retry-After');
+      const retryAfter = response.headers.get("Retry-After");
       throw new APIError(
-        data.error?.message || 'Rate limit exceeded. Please try again later.',
-        'RATE_LIMIT_EXCEEDED',
+        data.error?.message || "Rate limit exceeded. Please try again later.",
+        "RATE_LIMIT_EXCEEDED",
         429,
-        { retryAfter: retryAfter ? parseInt(retryAfter) : null }
+        { retryAfter: retryAfter ? parseInt(retryAfter) : null },
       );
     }
 
     // Handle authentication errors
     if (response.status === 401) {
       throw new APIError(
-        'Authentication required. Please sign in again.',
-        'UNAUTHORIZED',
-        401
+        "Authentication required. Please sign in again.",
+        "UNAUTHORIZED",
+        401,
       );
     }
 
     // Handle validation errors
     if (response.status === 400) {
       throw new APIError(
-        data.error?.message || 'Invalid request. Please check your input.',
-        data.error?.code || 'VALIDATION_ERROR',
+        data.error?.message || "Invalid request. Please check your input.",
+        data.error?.code || "VALIDATION_ERROR",
         400,
-        data.error?.details
+        data.error?.details,
       );
     }
 
     // Handle server errors
     if (response.status === 500) {
       throw new APIError(
-        data.error?.message || 'Server error. Please try again later.',
-        data.error?.code || 'SERVER_ERROR',
-        500
+        data.error?.message || "Server error. Please try again later.",
+        data.error?.code || "SERVER_ERROR",
+        500,
       );
     }
 
     // Handle network or other errors
     if (!response.ok) {
       throw new APIError(
-        data.error?.message || 'An unexpected error occurred',
-        data.error?.code || 'UNKNOWN_ERROR',
-        response.status
+        data.error?.message || "An unexpected error occurred",
+        data.error?.code || "UNKNOWN_ERROR",
+        response.status,
       );
     }
 
@@ -372,20 +516,19 @@ export async function getAlternativeDrugs(
     }
 
     // Handle network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
+    if (error instanceof TypeError && error.message.includes("fetch")) {
       throw new APIError(
-        'Network error. Please check your connection and try again.',
-        'NETWORK_ERROR',
-        0
+        "Network error. Please check your connection and try again.",
+        "NETWORK_ERROR",
+        0,
       );
     }
 
     // Handle other errors
     throw new APIError(
-      error instanceof Error ? error.message : 'An unexpected error occurred',
-      'UNKNOWN_ERROR',
-      0
+      error instanceof Error ? error.message : "An unexpected error occurred",
+      "UNKNOWN_ERROR",
+      0,
     );
   }
 }
-

@@ -39,16 +39,42 @@ export interface NDCPackage {
   listingExpirationDate?: string;
 }
 
+export interface ParsedSig {
+  dose: number;
+  frequency: number;
+  unit: string;
+  route?: string;
+  duration?: number;
+  prn?: string;
+  additionalInstructions?: string;
+  confidence?: number;
+}
+
+export interface StructuredSigInput {
+  mode: "structured";
+  dose: number;
+  frequency: number;
+  unit: string;
+}
+
+export interface FreeTextSigInput {
+  mode: "freetext";
+  text: string;
+  drugContext?: {
+    dosageForm?: string;
+    strength?: string;
+    route?: string;
+  };
+}
+
+export type SigInput = StructuredSigInput | FreeTextSigInput;
+
 export interface CalculateRequest {
   drug: {
     name?: string;
     rxcui?: string;
   };
-  sig: {
-    dose: number;
-    frequency: number;
-    unit: string;
-  };
+  sig: SigInput;
   daysSupply: number;
 }
 
@@ -60,10 +86,10 @@ export interface PackageRecommendation {
   marketingStatus?: string;
   isActive: boolean;
   quantityNeeded?: number;
-  fillPrecision?: 'exact' | 'overfill' | 'underfill';
+  fillPrecision?: "exact" | "overfill" | "underfill";
   reasoning?: string;
   confidenceScore?: number;
-  source?: 'ai' | 'algorithm';
+  source?: "ai" | "algorithm";
 }
 
 export interface Explanation {
@@ -84,8 +110,17 @@ export interface AIInsights {
   rationale: string;
   costEfficiency?: {
     estimatedWaste: number;
-    rating: 'low' | 'medium' | 'high';
+    rating: "low" | "medium" | "high";
   };
+}
+
+export interface SigParserMetadata {
+  usedAI: boolean;
+  parsed?: ParsedSig;
+  originalText?: string;
+  warnings?: string[];
+  executionTime?: number;
+  aiCost?: number;
 }
 
 export interface Metadata {
@@ -93,6 +128,7 @@ export interface Metadata {
   algorithmicFallback?: boolean;
   executionTime: number;
   aiCost?: number;
+  sigParser?: SigParserMetadata;
 }
 
 export interface AlternativeDrug {
@@ -140,4 +176,3 @@ export interface CalculateResponse {
     details?: unknown;
   };
 }
-

@@ -3,7 +3,7 @@
  * Orchestrates all services to deliver NDC calculation results
  */
 
-import { Request, Response } from 'express';
+import { Request, Response } from "express";
 import {
   CalculateRequest,
   CalculateResponse,
@@ -12,36 +12,48 @@ import {
   ExcludedNDC,
   AIInsights,
   Metadata,
-} from '@api-contracts';
-import { nameToRxCui } from '@clients-rxnorm';
-import { fdaClient, type NDCPackage } from '@clients-openfda';
-import { ndcRecommender, sanitizeForAI, type NDCRecommendationRequest } from '@clients-openai';
-import { createLogger } from '@core-guardrails';
-import { ENABLE_OPENAI_ENHANCER } from '@core-config';
-import { 
-  computeTotalQuantity, 
-  chooseBestPackage, 
+} from "@api-contracts";
+import { nameToRxCui } from "@clients-rxnorm";
+import { fdaClient, type NDCPackage } from "@clients-openfda";
+import {
+  ndcRecommender,
+  sanitizeForAI,
+  type NDCRecommendationRequest,
+} from "@clients-openai";
+import { createLogger } from "@core-guardrails";
+import { ENABLE_OPENAI_ENHANCER } from "@core-config";
+import {
+  computeTotalQuantity,
+  chooseBestPackage,
   calculateFillPrecision,
   filterByDosageFormFamily,
-  type PackageCandidate 
-} from '@domain-ndc';
+  type PackageCandidate,
+} from "@domain-ndc";
+import {
+  parseSigWithAI,
+  type SigParserRequest,
+} from "../../services/sig-parser";
+import type { SigParserMetadata } from "@api-contracts";
 
-const logger = createLogger({ service: 'CalculateEndpoint' });
+const logger = createLogger({ service: "CalculateEndpoint" });
 
 /**
  * POST /api/v1/calculate
  * Main calculation endpoint
  */
-export async function calculateHandler(req: Request, res: Response): Promise<void> {
+export async function calculateHandler(
+  req: Request,
+  res: Response,
+): Promise<void> {
   const startTime = Date.now();
   const request = req.body as CalculateRequest;
-  
+
   const explanations: Explanation[] = [];
   const warnings: string[] = [];
   const excluded: ExcludedNDC[] = [];
 
   try {
-    logger.info('Starting NDC calculation', {
+    logger.info("Starting NDC calculation", {
       drug: request.drug,
       daysSupply: request.daysSupply,
     });
@@ -57,42 +69,42 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     if (request.drug.rxcui) {
       // RxCUI provided, use directly
       rxcui = request.drug.rxcui;
-      drugName = request.drug.name || 'Unknown Drug';
-      logger.debug('Using provided RxCUI', { rxcui, drugName });
-      
+      drugName = request.drug.name || "Unknown Drug";
+      logger.debug("Using provided RxCUI", { rxcui, drugName });
+
       // Note: dosageForm and strength will be enriched from FDA data later
       dosageForm = undefined;
       strength = undefined;
-      
+
       explanations.push({
-        step: 'normalization',
+        step: "normalization",
         description: `Using provided RxCUI: ${rxcui} (${drugName})`,
-        details: { source: 'user_provided' },
+        details: { source: "user_provided" },
       });
     } else if (request.drug.name) {
       // Normalize drug name to RxCUI
-      logger.debug('Normalizing drug name', { drugName: request.drug.name });
-      
+      logger.debug("Normalizing drug name", { drugName: request.drug.name });
+
       const normalizationResult = await nameToRxCui(request.drug.name);
-      
+
       if (!normalizationResult.rxcui) {
         throw new Error(`Drug not found: ${request.drug.name}`);
       }
-      
+
       rxcui = normalizationResult.rxcui;
       drugName = normalizationResult.name;
       dosageForm = normalizationResult.dosageForm;
       strength = normalizationResult.strength;
-      
-      logger.info('Drug normalized successfully', {
+
+      logger.info("Drug normalized successfully", {
         originalName: request.drug.name,
         normalizedName: drugName,
         rxcui,
         confidence: normalizationResult.confidence,
       });
-      
+
       explanations.push({
-        step: 'normalization',
+        step: "normalization",
         description: `Normalized "${request.drug.name}" to RxCUI ${rxcui} (${drugName})`,
         details: {
           confidence: normalizationResult.confidence,
@@ -103,12 +115,114 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
 
       if (normalizationResult.confidence < 0.8) {
         warnings.push(
-          `Drug name confidence is ${(normalizationResult.confidence * 100).toFixed(0)}%. ` +
-          `Please verify: ${drugName}`
+          `Drug name confidence is ${(
+            normalizationResult.confidence * 100
+          ).toFixed(0)}%. ` + `Please verify: ${drugName}`,
         );
       }
     } else {
-      throw new Error('Either drug name or RxCUI must be provided');
+      throw new Error("Either drug name or RxCUI must be provided");
+    }
+
+    // ==========================================
+    // STEP 1.5: Parse SIG (if free-text)
+    // ==========================================
+    let sigParserMetadata: SigParserMetadata | undefined;
+    let parsedSig: { dose: number; frequency: number; unit: string };
+
+    if (request.sig.mode === "freetext") {
+      logger.info("Free-text SIG detected, initiating AI parsing");
+
+      const parserRequest: SigParserRequest = {
+        sigText: request.sig.text,
+        daysSupply: request.daysSupply,
+        drugContext: {
+          genericName: drugName,
+          dosageForm: dosageForm || request.sig.drugContext?.dosageForm,
+          strength: strength || request.sig.drugContext?.strength,
+          route: request.sig.drugContext?.route,
+        },
+      };
+
+      const parserResult = await parseSigWithAI(parserRequest);
+
+      if (!parserResult.success || !parserResult.parsed) {
+        // Parsing failed - return 400 with actionable message
+        logger.error("SIG parsing failed", {
+          error: parserResult.error,
+          method: parserResult.method,
+        });
+
+        res.status(400).json({
+          success: false,
+          error: {
+            code: parserResult.error?.code || "SIG_PARSING_FAILED",
+            message:
+              parserResult.error?.message ||
+              "Unable to parse prescription directions. Please use structured mode or verify the text.",
+            details: {
+              warnings: parserResult.warnings,
+              method: parserResult.method,
+              originalText: request.sig.text,
+            },
+          },
+        } as CalculateResponse);
+        return;
+      }
+
+      // Parsing succeeded
+      parsedSig = {
+        dose: parserResult.parsed.dose,
+        frequency: parserResult.parsed.frequency,
+        unit: parserResult.parsed.unit,
+      };
+
+      // Add parser warnings to main warnings
+      warnings.push(...parserResult.warnings);
+
+      // Build parser metadata for response
+      sigParserMetadata = {
+        usedAI: parserResult.method === "ai",
+        parsed: parserResult.parsed,
+        originalText: request.sig.text,
+        warnings: parserResult.warnings,
+        executionTime: parserResult.executionTime,
+        aiCost: parserResult.aiCost,
+      };
+
+      explanations.push({
+        step: "parse_sig",
+        description:
+          parserResult.method === "ai"
+            ? `Parsed free-text SIG using AI (confidence: ${(
+                parserResult.confidence * 100
+              ).toFixed(0)}%)`
+            : `Parsed free-text SIG using pattern matching (confidence: ${(
+                parserResult.confidence * 100
+              ).toFixed(0)}%)`,
+        details: {
+          method: parserResult.method,
+          originalText: request.sig.text,
+          parsed: parserResult.parsed,
+          confidence: parserResult.confidence,
+          warningsCount: parserResult.warnings.length,
+        },
+      });
+
+      logger.info("SIG parsed successfully", {
+        method: parserResult.method,
+        confidence: parserResult.confidence,
+        dose: parsedSig.dose,
+        frequency: parsedSig.frequency,
+        unit: parsedSig.unit,
+      });
+    } else {
+      // Structured SIG - use directly
+      parsedSig = {
+        dose: request.sig.dose,
+        frequency: request.sig.frequency,
+        unit: request.sig.unit,
+      };
     }
 
     // ==========================================
@@ -116,72 +230,79 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     // ==========================================
     // Strategy: Use FDA's RxCUI search as primary source (most reliable)
     // FDA automatically returns only currently-marketed NDCs with complete metadata
-    
-    logger.debug('Fetching NDC packages from FDA by RxCUI', { rxcui });
-    
+
+    logger.debug("Fetching NDC packages from FDA by RxCUI", { rxcui });
+
     // Primary: Query FDA directly by RxCUI (most reliable)
-    logger.info('Attempting FDA RxCUI search', { rxcui, limit: 100 });
-    const allPackages: NDCPackage[] = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
-    
-    logger.info('FDA RxCUI search completed', { 
+    logger.info("Attempting FDA RxCUI search", { rxcui, limit: 100 });
+    const allPackages: NDCPackage[] = await fdaClient.getNDCsByRxCUI(rxcui, {
+      limit: 100,
+    });
+
+    logger.info("FDA RxCUI search completed", {
       rxcui,
       packageCount: allPackages?.length || 0,
       hasResults: !!(allPackages && allPackages.length > 0),
     });
-    
+
     if (allPackages && allPackages.length > 0) {
       explanations.push({
-        step: 'fetch_packages_fda',
+        step: "fetch_packages_fda",
         description: `Retrieved ${allPackages.length} NDC packages from FDA by RxCUI`,
         details: {
           rxcui,
-          source: 'openFDA',
-          method: 'RxCUI search',
+          source: "openFDA",
+          method: "RxCUI search",
         },
       });
     } else {
       // FDA returned no results - this shouldn't happen for valid drugs
-      logger.error('FDA RxCUI search returned no packages', {
+      logger.error("FDA RxCUI search returned no packages", {
         rxcui,
         drugName,
       });
-      throw new Error(`FDA has no NDC packages for RxCUI ${rxcui}. This may indicate an issue with the FDA API or the RxCUI.`);
+      throw new Error(
+        `FDA has no NDC packages for RxCUI ${rxcui}. This may indicate an issue with the FDA API or the RxCUI.`,
+      );
     }
-    
+
     if (!allPackages || allPackages.length === 0) {
       throw new Error(`No NDC packages found for drug (RxCUI: ${rxcui})`);
     }
-    
-    logger.info('Package retrieval complete', {
+
+    logger.info("Package retrieval complete", {
       rxcui,
       totalPackages: allPackages.length,
     });
 
     // Filter active packages
-    const activePackages = allPackages.filter((pkg: NDCPackage) => 
-      pkg.marketingStatus && typeof pkg.marketingStatus === 'object' 
-        ? pkg.marketingStatus.isActive 
-        : false
+    const activePackages = allPackages.filter((pkg: NDCPackage) =>
+      pkg.marketingStatus && typeof pkg.marketingStatus === "object"
+        ? pkg.marketingStatus.isActive
+        : false,
     );
     const inactiveCount = allPackages.length - activePackages.length;
-    
+
     if (inactiveCount > 0) {
       explanations.push({
-        step: 'filter_active',
+        step: "filter_active",
         description: `Filtered out ${inactiveCount} inactive/discontinued packages`,
         details: { activeCount: activePackages.length },
       });
-      
+
       // Track excluded NDCs
       allPackages
-        .filter((pkg: NDCPackage) => 
-          !pkg.marketingStatus || 
-          (typeof pkg.marketingStatus === 'object' && !pkg.marketingStatus.isActive)
+        .filter(
+          (pkg: NDCPackage) =>
+            !pkg.marketingStatus ||
+            (typeof pkg.marketingStatus === "object" &&
+              !pkg.marketingStatus.isActive),
         )
         .forEach((pkg: NDCPackage) => {
-          const status = typeof pkg.marketingStatus === 'object' 
-            ? pkg.marketingStatus.status 
-            : 'unknown';
+          const status =
+            typeof pkg.marketingStatus === "object"
+              ? pkg.marketingStatus.status
+              : "unknown";
           excluded.push({
             ndc: pkg.ndc,
             reason: `Inactive or discontinued (status: ${status})`,
@@ -191,22 +312,25 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     }
 
     if (activePackages.length === 0) {
-      throw new Error('No active NDC packages available for this drug');
+      throw new Error("No active NDC packages available for this drug");
     }
 
     // ==========================================
     // STEP 3: Filter by dosage form family
     // ==========================================
     let filteredPackages = activePackages;
-    
-    if (request.sig.unit) {
+
+    if (parsedSig.unit) {
       // Use dosage form family matching (solid, liquid, other)
-      filteredPackages = filterByDosageFormFamily(activePackages, request.sig.unit);
-      
+      filteredPackages = filterByDosageFormFamily(
+        activePackages,
+        parsedSig.unit,
+      );
+
       if (filteredPackages.length > 0) {
         explanations.push({
-          step: 'filter_dosage_form',
-          description: `Filtered to ${filteredPackages.length} packages matching dosage form family for "${request.sig.unit}"`,
+          step: "filter_dosage_form",
+          description: `Filtered to ${filteredPackages.length} packages matching dosage form family for "${parsedSig.unit}"`,
           details: {
             originalCount: activePackages.length,
             filteredCount: filteredPackages.length,
@@ -216,56 +340,60 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
         // If no match found, include all active packages with warning
         filteredPackages = activePackages;
         warnings.push(
-          `No packages found matching dosage form "${request.sig.unit}". ` +
-          `Showing all available dosage forms. Verify prescription carefully.`
+          `No packages found matching dosage form "${parsedSig.unit}". ` +
+            `Showing all available dosage forms. Verify prescription carefully.`,
         );
-        
+
         explanations.push({
-          step: 'filter_dosage_form',
-          description: 'No dosage form match found - showing all active packages',
+          step: "filter_dosage_form",
+          description:
+            "No dosage form match found - showing all active packages",
           details: {
-            requestedForm: request.sig.unit,
-            availableForms: Array.from(new Set(activePackages.map(p => p.dosageForm))),
+            requestedForm: parsedSig.unit,
+            availableForms: Array.from(
+              new Set(activePackages.map((p) => p.dosageForm)),
+            ),
           },
         });
       }
     }
 
     // Sort by package size for better recommendations
-    const sortedPackages = [...filteredPackages].sort((a, b) => 
-      (a.packageSize?.quantity || 0) - (b.packageSize?.quantity || 0)
+    const sortedPackages = [...filteredPackages].sort(
+      (a, b) => (a.packageSize?.quantity || 0) - (b.packageSize?.quantity || 0),
     );
 
     // ==========================================
     // STEP 4: Calculate total quantity needed (with unit conversion)
     // ==========================================
     const quantityResult = computeTotalQuantity(
-      request.sig,
+      parsedSig,
       { strength, dosageForm },
-      request.daysSupply
+      request.daysSupply,
     );
-    
+
     const totalQuantity = quantityResult.totalQuantity;
-    
+
     // Add any quantity calculation warnings
     warnings.push(...quantityResult.warnings);
-    
-    logger.info('Calculated total quantity', {
-      dose: request.sig.dose,
-      frequency: request.sig.frequency,
+
+    logger.info("Calculated total quantity", {
+      dose: parsedSig.dose,
+      frequency: parsedSig.frequency,
       daysSupply: request.daysSupply,
       totalQuantity,
       method: quantityResult.details?.method,
     });
-    
+
     explanations.push({
-      step: 'quantity_calculation',
-      description: quantityResult.details?.calculation || 
-        `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
+      step: "quantity_calculation",
+      description:
+        quantityResult.details?.calculation ||
+        `Calculated total quantity: ${totalQuantity} ${parsedSig.unit}`,
       details: {
-        method: quantityResult.details?.method || 'direct',
-        dose: request.sig.dose,
-        frequency: request.sig.frequency,
+        method: quantityResult.details?.method || "direct",
+        dose: parsedSig.dose,
+        frequency: parsedSig.frequency,
         daysSupply: request.daysSupply,
         result: totalQuantity,
       },
@@ -274,42 +402,44 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     // ==========================================
     // STEP 5: Select optimal package (MVP: Single package only)
     // ==========================================
-    
+
     // Convert NDCPackages to PackageCandidate format
-    const packageCandidates: PackageCandidate[] = sortedPackages.map(pkg => ({
+    const packageCandidates: PackageCandidate[] = sortedPackages.map((pkg) => ({
       ndc: pkg.ndc,
       packageSize: {
         quantity: pkg.packageSize.quantity,
         unit: pkg.packageSize.unit,
       },
       dosageForm: pkg.dosageForm,
-      marketingStatus: typeof pkg.marketingStatus === 'object' 
-        ? pkg.marketingStatus.status 
-        : 'unknown',
-      isActive: typeof pkg.marketingStatus === 'object' 
-        ? pkg.marketingStatus.isActive 
-        : false,
+      marketingStatus:
+        typeof pkg.marketingStatus === "object"
+          ? pkg.marketingStatus.status
+          : "unknown",
+      isActive:
+        typeof pkg.marketingStatus === "object"
+          ? pkg.marketingStatus.isActive
+          : false,
       labelerName: pkg.labeler,
     }));
-    
+
     // Use smart package selection algorithm
     const selection = chooseBestPackage(packageCandidates, totalQuantity);
-    
+
     // Add any selection warnings
     warnings.push(...selection.warnings);
-    
+
     const overfillPercentage = selection.overfillPercentage;
     const underfillPercentage = selection.underfillPercentage;
-    
-    logger.info('Selected package', {
+
+    logger.info("Selected package", {
       ndc: selection.selected.ndc,
       packageSize: selection.selected.packageSize.quantity,
       overfillPercentage,
       underfillPercentage,
     });
-    
+
     explanations.push({
-      step: 'package_selection',
+      step: "package_selection",
       description: selection.explanation,
       details: {
         ndc: selection.selected.ndc,
@@ -323,20 +453,22 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     // Calculate precise fill metrics
     const fillMetrics = calculateFillPrecision(
       selection.selected.packageSize.quantity,
-      totalQuantity
+      totalQuantity,
     );
-    
+
     // Format recommendation
-    const recommendedPackages: PackageRecommendation[] = [{
-      ndc: selection.selected.ndc,
-      packageSize: selection.selected.packageSize.quantity,
-      unit: selection.selected.packageSize.unit,
-      dosageForm: selection.selected.dosageForm,
-      marketingStatus: selection.selected.marketingStatus,
-      isActive: selection.selected.isActive,
-      quantityNeeded: selection.selected.packageSize.quantity,
-      fillPrecision: fillMetrics.fillPrecision,
-    }];
+    const recommendedPackages: PackageRecommendation[] = [
+      {
+        ndc: selection.selected.ndc,
+        packageSize: selection.selected.packageSize.quantity,
+        unit: selection.selected.packageSize.unit,
+        dosageForm: selection.selected.dosageForm,
+        marketingStatus: selection.selected.marketingStatus,
+        isActive: selection.selected.isActive,
+        quantityNeeded: selection.selected.packageSize.quantity,
+        fillPrecision: fillMetrics.fillPrecision,
+      },
+    ];
 
     // ==========================================
     // STEP 6: AI Enhancement (Optional - Annotation Only)
@@ -345,44 +477,49 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     let metadata: Metadata = {
       usedAI: false,
       executionTime: 0, // Will be set at the end
+      sigParser: sigParserMetadata,
     };
 
     if (ENABLE_OPENAI_ENHANCER) {
-      logger.info('AI enhancement enabled, calling OpenAI recommender', { rxcui });
-      
+      logger.info("AI enhancement enabled, calling OpenAI recommender", {
+        rxcui,
+      });
+
       try {
         const aiStartTime = Date.now();
-        
+
         // Prepare AI request (sanitize to remove PHI/PII)
         const rawAiRequest: NDCRecommendationRequest = {
           drug: {
-            genericName: drugName || 'Unknown',
+            genericName: drugName || "Unknown",
             rxcui,
             dosageForm,
             strength,
           },
           prescription: {
-            sig: `${request.sig.dose} ${request.sig.unit} ${request.sig.frequency} times daily`,
+            sig: `${parsedSig.dose} ${parsedSig.unit} ${parsedSig.frequency} times daily`,
             daysSupply: request.daysSupply,
             quantityNeeded: totalQuantity,
           },
-          availablePackages: packageCandidates.map(pkg => ({
+          availablePackages: packageCandidates.map((pkg) => ({
             ndc: pkg.ndc,
             packageSize: pkg.packageSize.quantity,
             unit: pkg.packageSize.unit,
-            labeler: pkg.labelerName || 'Unknown',
+            labeler: pkg.labelerName || "Unknown",
             isActive: pkg.isActive,
           })),
         };
-        
+
         // Sanitize request to remove any PHI/PII before sending to AI
         const aiRequest = sanitizeForAI(rawAiRequest);
 
         // Get AI recommendation (for annotation only, not package selection)
-        const aiResult = await ndcRecommender.getEnhancedRecommendation(aiRequest as any);
+        const aiResult = await ndcRecommender.getEnhancedRecommendation(
+          aiRequest as any,
+        );
         const aiExecutionTime = Date.now() - aiStartTime;
 
-        logger.info('AI recommendation received', {
+        logger.info("AI recommendation received", {
           usedAI: aiResult.metadata.usedAI,
           algorithmicFallback: aiResult.metadata.algorithmicFallback,
           executionTime: aiExecutionTime,
@@ -404,6 +541,7 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
           algorithmicFallback: aiResult.metadata.algorithmicFallback,
           executionTime: 0, // Will be set at the end
           aiCost: aiResult.metadata.aiCost,
+          sigParser: sigParserMetadata,
         };
 
         // IMPORTANT: AI only annotates, never overrides package selection
@@ -415,47 +553,48 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
               ...recommendedPackages[0],
               reasoning: aiResult.primary.reasoning,
               confidenceScore: aiResult.primary.confidenceScore,
-              source: 'ai' as const,
+              source: "ai" as const,
             };
           } else {
             // AI suggested different package - note this but don't change selection
-            logger.info('AI suggested different package than algorithm', {
+            logger.info("AI suggested different package than algorithm", {
               algorithmNdc: recommendedPackages[0].ndc,
               aiNdc: aiResult.primary.ndc,
             });
-            
+
             recommendedPackages[0] = {
               ...recommendedPackages[0],
               reasoning: `Algorithm-based selection. AI suggested ${aiResult.primary.ndc} but keeping algorithmic choice for consistency.`,
-              source: 'algorithm' as const,
+              source: "algorithm" as const,
             };
           }
         }
 
         explanations.push({
-          step: 'ai_enhancement',
+          step: "ai_enhancement",
           description: aiResult.metadata.usedAI
-            ? 'AI-enhanced recommendation with reasoning (annotation only)'
-            : 'Algorithm-based recommendation (AI unavailable)',
+            ? "AI-enhanced recommendation with reasoning (annotation only)"
+            : "Algorithm-based recommendation (AI unavailable)",
           details: {
             usedAI: aiResult.metadata.usedAI,
             executionTime: aiExecutionTime,
-            note: 'AI provides annotations only; package selection is algorithm-based',
+            note: "AI provides annotations only; package selection is algorithm-based",
           },
         });
       } catch (aiError) {
-        logger.warn('AI enhancement failed, using algorithmic results', {
+        logger.warn("AI enhancement failed, using algorithmic results", {
           error: aiError as Error,
         });
-        
+
         metadata = {
           usedAI: false,
           algorithmicFallback: true,
           executionTime: 0, // Will be set at the end
+          sigParser: sigParserMetadata,
         };
-        
+
         warnings.push(
-          'AI enhancement unavailable. Recommendations are algorithm-based only.'
+          "AI enhancement unavailable. Recommendations are algorithm-based only.",
         );
       }
     }
@@ -465,8 +604,8 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     // ==========================================
     const executionTime = Date.now() - startTime;
     metadata.executionTime = executionTime;
-    
-    logger.info('Calculation completed successfully', {
+
+    logger.info("Calculation completed successfully", {
       rxcui,
       totalQuantity,
       recommendedPackages: recommendedPackages.length,
@@ -497,8 +636,8 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     res.status(200).json(response);
   } catch (error) {
     const executionTime = Date.now() - startTime;
-    
-    logger.error('Calculation failed', error as Error, {
+
+    logger.error("Calculation failed", error as Error, {
       request,
       executionTime,
     });
@@ -506,8 +645,8 @@ export async function calculateHandler(req: Request, res: Response): Promise<voi
     const response: CalculateResponse = {
       success: false,
       error: {
-        code: (error as any).code || 'CALCULATION_ERROR',
-        message: (error as Error).message || 'Failed to calculate NDC packages',
+        code: (error as any).code || "CALCULATION_ERROR",
+        message: (error as Error).message || "Failed to calculate NDC packages",
         details: { executionTime },
       },
     };

@@ -1,11 +1,19 @@
-"use client"
+"use client";
 
 /**
  * Workflow Context Provider
  * Manages state for the 6-step pharmacist workflow
  */
 
-import React, { createContext, useContext, useReducer, useCallback, useEffect } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useReducer,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   WorkflowState,
   WorkflowAction,
@@ -13,55 +21,57 @@ import {
   WorkflowContextValue,
   StepMetadata,
   StepValidationRules,
-} from '@/types/workflow';
+} from "@/types/workflow";
 
 // Session storage key
-const WORKFLOW_SESSION_KEY = 'ndc_workflow_state';
+const WORKFLOW_SESSION_KEY = "ndc_workflow_state";
 
 /**
  * Create initial workflow state
  */
 function createInitialState(): WorkflowState {
-  const sessionId = `workflow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  
+  const sessionId = `workflow_${Date.now()}_${Math.random()
+    .toString(36)
+    .substr(2, 9)}`;
+
   const steps: Record<WorkflowStep, StepMetadata> = {
     [WorkflowStep.DRUG_SEARCH]: {
       id: WorkflowStep.DRUG_SEARCH,
-      title: 'Drug Search',
-      description: 'Search for medication',
+      title: "Drug Search",
+      description: "Search for medication",
       isComplete: false,
       isValid: false,
     },
     [WorkflowStep.CHOOSE_PACKAGE]: {
       id: WorkflowStep.CHOOSE_PACKAGE,
-      title: 'Choose Package',
-      description: 'Browse & select an NDC package',
+      title: "Choose Package",
+      description: "Browse & select an NDC package",
       isComplete: false,
       isValid: false,
     },
     [WorkflowStep.SIG_ENTRY]: {
       id: WorkflowStep.SIG_ENTRY,
-      title: 'Enter SIG',
-      description: 'Prescription directions',
+      title: "Enter SIG",
+      description: "Prescription directions",
       isComplete: false,
       isValid: false,
     },
     [WorkflowStep.QUANTITY_REVIEW]: {
       id: WorkflowStep.QUANTITY_REVIEW,
-      title: 'Review Quantity',
-      description: 'Verify calculated quantity',
+      title: "Review Quantity",
+      description: "Verify calculated quantity",
       isComplete: false,
       isValid: false,
     },
     [WorkflowStep.CONFIRMATION]: {
       id: WorkflowStep.CONFIRMATION,
-      title: 'Confirmation',
-      description: 'Final review and approval',
+      title: "Confirmation",
+      description: "Final review and approval",
       isComplete: false,
       isValid: false,
     },
   };
-  
+
   return {
     currentStep: WorkflowStep.DRUG_SEARCH,
     steps,
@@ -83,13 +93,17 @@ const validationRules: StepValidationRules = {
   },
   [WorkflowStep.SIG_ENTRY]: (state) => {
     if (!state.sig) return false;
-    if (state.sig.mode === 'structured') {
-      return !!(state.sig.structured?.dose && state.sig.structured?.frequency && state.sig.structured?.unit);
+    if (state.sig.mode === "structured") {
+      return !!(
+        state.sig.structured?.dose &&
+        state.sig.structured?.frequency &&
+        state.sig.structured?.unit
+      );
     }
     return !!(state.sig.freetext || state.sig.parsed);
   },
   [WorkflowStep.QUANTITY_REVIEW]: (state) => {
-    return !!(state.quantity?.totalQuantity);
+    return !!state.quantity?.totalQuantity;
   },
   [WorkflowStep.CONFIRMATION]: (state) => {
     return validationRules[WorkflowStep.QUANTITY_REVIEW](state);
@@ -99,28 +113,40 @@ const validationRules: StepValidationRules = {
 /**
  * Workflow reducer
  */
-function workflowReducer(state: WorkflowState, action: WorkflowAction): WorkflowState {
+function workflowReducer(
+  state: WorkflowState,
+  action: WorkflowAction,
+): WorkflowState {
   const now = Date.now();
-  
+
   switch (action.type) {
-    case 'NEXT_STEP': {
-      const nextStep = Math.min(state.currentStep + 1, WorkflowStep.CONFIRMATION) as WorkflowStep;
+    case "NEXT_STEP": {
+      const nextStep = Math.min(
+        state.currentStep + 1,
+        WorkflowStep.CONFIRMATION,
+      ) as WorkflowStep;
       return {
         ...state,
         currentStep: nextStep,
         lastUpdatedAt: now,
       };
     }
-    
-    case 'PREVIOUS_STEP': {
-      const previousStep = Math.max(state.currentStep - 1, WorkflowStep.DRUG_SEARCH) as WorkflowStep;
-      
-      const shouldClearSelection = previousStep === WorkflowStep.DRUG_SEARCH && state.selectedPackage;
-      
+
+    case "PREVIOUS_STEP": {
+      const previousStep = Math.max(
+        state.currentStep - 1,
+        WorkflowStep.DRUG_SEARCH,
+      ) as WorkflowStep;
+
+      const shouldClearSelection =
+        previousStep === WorkflowStep.DRUG_SEARCH && state.selectedPackage;
+
       return {
         ...state,
         currentStep: previousStep,
-        selectedPackage: shouldClearSelection ? undefined : state.selectedPackage,
+        selectedPackage: shouldClearSelection
+          ? undefined
+          : state.selectedPackage,
         steps: shouldClearSelection
           ? {
               ...state.steps,
@@ -134,14 +160,17 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'GO_TO_STEP': {
-      const shouldClearSelection = action.payload === WorkflowStep.DRUG_SEARCH && state.selectedPackage;
-      
+
+    case "GO_TO_STEP": {
+      const shouldClearSelection =
+        action.payload === WorkflowStep.DRUG_SEARCH && state.selectedPackage;
+
       return {
         ...state,
         currentStep: action.payload,
-        selectedPackage: shouldClearSelection ? undefined : state.selectedPackage,
+        selectedPackage: shouldClearSelection
+          ? undefined
+          : state.selectedPackage,
         steps: shouldClearSelection
           ? {
               ...state.steps,
@@ -155,15 +184,17 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'SET_DRUG_SEARCH': {
+
+    case "SET_DRUG_SEARCH": {
       const isValid = !!(action.payload.rxcui && action.payload.drugName);
       const isDifferentDrug = state.drugSearch?.rxcui !== action.payload.rxcui;
-      
+
       return {
         ...state,
         drugSearch: action.payload,
-        availablePackages: isDifferentDrug ? undefined : state.availablePackages,
+        availablePackages: isDifferentDrug
+          ? undefined
+          : state.availablePackages,
         selectedPackage: isDifferentDrug ? undefined : state.selectedPackage,
         steps: {
           ...state.steps,
@@ -185,8 +216,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'SET_AVAILABLE_PACKAGES': {
+
+    case "SET_AVAILABLE_PACKAGES": {
       return {
         ...state,
         availablePackages: action.payload,
@@ -202,8 +233,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'SELECT_PACKAGE': {
+
+    case "SELECT_PACKAGE": {
       return {
         ...state,
         selectedPackage: {
@@ -221,8 +252,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'DESELECT_PACKAGE': {
+
+    case "DESELECT_PACKAGE": {
       return {
         ...state,
         selectedPackage: undefined,
@@ -237,8 +268,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'TOGGLE_MULTI_PACKAGE_MODE': {
+
+    case "TOGGLE_MULTI_PACKAGE_MODE": {
       return {
         ...state,
         multiPackageMode: action.payload,
@@ -256,15 +287,17 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'ADD_PACKAGE_TO_SELECTION': {
+
+    case "ADD_PACKAGE_TO_SELECTION": {
       const currentPackages = state.selectedPackages || [];
-      const alreadySelected = currentPackages.some(p => p.package.ndc === action.payload.ndc);
-      
+      const alreadySelected = currentPackages.some(
+        (p) => p.package.ndc === action.payload.ndc,
+      );
+
       if (alreadySelected) {
         return state; // Already selected, no change
       }
-      
+
       const newPackages = [
         ...currentPackages,
         {
@@ -272,7 +305,7 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
           selectedAt: now,
         },
       ];
-      
+
       return {
         ...state,
         selectedPackages: newPackages,
@@ -287,11 +320,13 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'REMOVE_PACKAGE_FROM_SELECTION': {
+
+    case "REMOVE_PACKAGE_FROM_SELECTION": {
       const currentPackages = state.selectedPackages || [];
-      const newPackages = currentPackages.filter(p => p.package.ndc !== action.payload);
-      
+      const newPackages = currentPackages.filter(
+        (p) => p.package.ndc !== action.payload,
+      );
+
       return {
         ...state,
         selectedPackages: newPackages,
@@ -306,8 +341,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'CLEAR_PACKAGE_SELECTION': {
+
+    case "CLEAR_PACKAGE_SELECTION": {
       return {
         ...state,
         selectedPackages: [],
@@ -322,23 +357,23 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'SET_PACKAGE_RECOMMENDATIONS': {
+
+    case "SET_PACKAGE_RECOMMENDATIONS": {
       return {
         ...state,
         packageRecommendations: action.payload,
         lastUpdatedAt: now,
       };
     }
-    
-    case 'APPLY_PACKAGE_RECOMMENDATION': {
+
+    case "APPLY_PACKAGE_RECOMMENDATION": {
       const recommendation = action.payload;
-      const selectedPackages = recommendation.packages.map(p => ({
+      const selectedPackages = recommendation.packages.map((p) => ({
         package: p.package,
         selectedAt: now,
         quantityFromPackage: p.quantity,
       }));
-      
+
       return {
         ...state,
         selectedPackages,
@@ -354,8 +389,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'SET_SIG': {
+
+    case "SET_SIG": {
       const isValid = validationRules[WorkflowStep.SIG_ENTRY]({
         ...state,
         sig: action.payload,
@@ -374,8 +409,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'SET_QUANTITY': {
+
+    case "SET_QUANTITY": {
       return {
         ...state,
         quantity: action.payload,
@@ -390,8 +425,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'COMPLETE_STEP': {
+
+    case "COMPLETE_STEP": {
       return {
         ...state,
         steps: {
@@ -404,8 +439,8 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'INVALIDATE_STEP': {
+
+    case "INVALIDATE_STEP": {
       return {
         ...state,
         steps: {
@@ -419,18 +454,18 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
         lastUpdatedAt: now,
       };
     }
-    
-    case 'RESET_WORKFLOW': {
+
+    case "RESET_WORKFLOW": {
       return createInitialState();
     }
-    
-    case 'RESTORE_WORKFLOW': {
+
+    case "RESTORE_WORKFLOW": {
       return {
         ...action.payload,
         lastUpdatedAt: now,
       };
     }
-    
+
     default:
       return state;
   }
@@ -439,7 +474,9 @@ function workflowReducer(state: WorkflowState, action: WorkflowAction): Workflow
 /**
  * Workflow Context
  */
-const WorkflowContext = createContext<WorkflowContextValue | undefined>(undefined);
+const WorkflowContext = createContext<WorkflowContextValue | undefined>(
+  undefined,
+);
 
 /**
  * Workflow Provider Props
@@ -452,10 +489,13 @@ interface WorkflowProviderProps {
 /**
  * Workflow Provider Component
  */
-export function WorkflowProvider({ children, persistToSession = true }: WorkflowProviderProps) {
+export function WorkflowProvider({
+  children,
+  persistToSession = true,
+}: WorkflowProviderProps) {
   const [state, dispatch] = useReducer(workflowReducer, null, () => {
     // Try to restore from session storage on mount
-    if (persistToSession && typeof window !== 'undefined') {
+    if (persistToSession && typeof window !== "undefined") {
       try {
         const stored = sessionStorage.getItem(WORKFLOW_SESSION_KEY);
         if (stored) {
@@ -466,92 +506,137 @@ export function WorkflowProvider({ children, persistToSession = true }: Workflow
           }
         }
       } catch (error) {
-        console.warn('Failed to restore workflow from session:', error);
+        console.warn("Failed to restore workflow from session:", error);
       }
     }
     return createInitialState();
   });
-  
+
+  const nextStepInterceptorRef = useRef<
+    (() => Promise<boolean | void> | boolean | void) | null
+  >(null);
+  const [navigationState, setNavigationState] = useState<{
+    isLoading: boolean;
+  }>({ isLoading: false });
+
   // Persist to session storage on state change
   useEffect(() => {
-    if (persistToSession && typeof window !== 'undefined') {
+    if (persistToSession && typeof window !== "undefined") {
       try {
         sessionStorage.setItem(WORKFLOW_SESSION_KEY, JSON.stringify(state));
       } catch (error) {
-        console.warn('Failed to persist workflow to session:', error);
+        console.warn("Failed to persist workflow to session:", error);
       }
     }
   }, [state, persistToSession]);
-  
+
   // Navigation helpers
   const canGoNext = useCallback(() => {
     if (state.currentStep >= WorkflowStep.CONFIRMATION) return false;
     return validationRules[state.currentStep](state);
   }, [state]);
-  
+
   const canGoPrevious = useCallback(() => {
     return state.currentStep > WorkflowStep.DRUG_SEARCH;
   }, [state.currentStep]);
-  
+
   const goNext = useCallback(() => {
-    if (canGoNext()) {
-      dispatch({ type: 'NEXT_STEP' });
-    }
+    if (!canGoNext()) return;
+
+    const run = async () => {
+      let shouldProceed = true;
+
+      if (nextStepInterceptorRef.current) {
+        try {
+          const result = await nextStepInterceptorRef.current();
+          shouldProceed = result !== false;
+        } catch (error) {
+          console.error("Workflow next-step interceptor failed:", error);
+          shouldProceed = false;
+        }
+      }
+
+      if (shouldProceed) {
+        dispatch({ type: "NEXT_STEP" });
+      }
+    };
+
+    run();
   }, [canGoNext]);
-  
+
   const goPrevious = useCallback(() => {
     if (canGoPrevious()) {
-      dispatch({ type: 'PREVIOUS_STEP' });
+      dispatch({ type: "PREVIOUS_STEP" });
     }
   }, [canGoPrevious]);
-  
-  const goToStep = useCallback((step: WorkflowStep) => {
-    // Only allow going to completed steps or the next step
-    if (step <= state.currentStep || state.steps[step - 1 as WorkflowStep]?.isComplete) {
-      dispatch({ type: 'GO_TO_STEP', payload: step });
-    }
-  }, [state.currentStep, state.steps]);
-  
-  const completeCurrentStep = useCallback(() => {
-    dispatch({ type: 'COMPLETE_STEP', payload: state.currentStep });
-  }, [state.currentStep]);
-  
-  const resetWorkflow = useCallback(() => {
-    dispatch({ type: 'RESET_WORKFLOW' });
 
-    if (persistToSession && typeof window !== 'undefined') {
+  const goToStep = useCallback(
+    (step: WorkflowStep) => {
+      // Only allow going to completed steps or the next step
+      if (
+        step <= state.currentStep ||
+        state.steps[(step - 1) as WorkflowStep]?.isComplete
+      ) {
+        dispatch({ type: "GO_TO_STEP", payload: step });
+      }
+    },
+    [state.currentStep, state.steps],
+  );
+
+  const completeCurrentStep = useCallback(() => {
+    dispatch({ type: "COMPLETE_STEP", payload: state.currentStep });
+  }, [state.currentStep]);
+
+  const resetWorkflow = useCallback(() => {
+    dispatch({ type: "RESET_WORKFLOW" });
+
+    if (persistToSession && typeof window !== "undefined") {
       try {
         sessionStorage.removeItem(WORKFLOW_SESSION_KEY);
       } catch (error) {
-        console.warn('Failed to clear workflow session:', error);
+        console.warn("Failed to clear workflow session:", error);
       }
     }
   }, [persistToSession]);
-  
+
   const saveToSession = useCallback(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
         sessionStorage.setItem(WORKFLOW_SESSION_KEY, JSON.stringify(state));
       } catch (error) {
-        console.error('Failed to save workflow to session:', error);
+        console.error("Failed to save workflow to session:", error);
       }
     }
   }, [state]);
-  
+
   const loadFromSession = useCallback(() => {
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       try {
         const stored = sessionStorage.getItem(WORKFLOW_SESSION_KEY);
         if (stored) {
           const parsed = JSON.parse(stored) as WorkflowState;
-          dispatch({ type: 'RESTORE_WORKFLOW', payload: parsed });
+          dispatch({ type: "RESTORE_WORKFLOW", payload: parsed });
         }
       } catch (error) {
-        console.error('Failed to load workflow from session:', error);
+        console.error("Failed to load workflow from session:", error);
       }
     }
   }, []);
-  
+
+  const registerNextInterceptor = useCallback(
+    (handler: (() => Promise<boolean | void> | boolean | void) | null) => {
+      nextStepInterceptorRef.current = handler;
+    },
+    [],
+  );
+
+  const updateNavigationState = useCallback(
+    (nextState: { isLoading: boolean }) => {
+      setNavigationState(nextState);
+    },
+    [],
+  );
+
   const value: WorkflowContextValue = {
     state,
     dispatch,
@@ -564,8 +649,11 @@ export function WorkflowProvider({ children, persistToSession = true }: Workflow
     resetWorkflow,
     saveToSession,
     loadFromSession,
+    registerNextInterceptor,
+    navigationState,
+    setNavigationState: updateNavigationState,
   };
-  
+
   return (
     <WorkflowContext.Provider value={value}>
       {children}
@@ -579,8 +667,7 @@ export function WorkflowProvider({ children, persistToSession = true }: Workflow
 export function useWorkflow() {
   const context = useContext(WorkflowContext);
   if (context === undefined) {
-    throw new Error('useWorkflow must be used within a WorkflowProvider');
+    throw new Error("useWorkflow must be used within a WorkflowProvider");
   }
   return context;
 }
-

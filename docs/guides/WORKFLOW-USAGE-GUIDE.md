@@ -1,6 +1,6 @@
 # Workflow System Usage Guide
 
-**Last Updated:** November 19, 2025  
+**Last Updated:** November 19, 2025
 **Version:** 1.0 (PR-01)
 
 ---
@@ -69,7 +69,7 @@ function MyComponent() {
     goPrevious,     // Function: go back
     dispatch,       // Action dispatcher
   } = useWorkflow();
-  
+
   return (
     <div>
       <p>Current step: {state.currentStep}</p>
@@ -112,36 +112,36 @@ const { dispatch } = useWorkflow();
 
 // Set drug search results
 dispatch({
-  type: 'SET_DRUG_SEARCH',
+  type: "SET_DRUG_SEARCH",
   payload: {
-    searchTerm: 'Lisinopril',
-    rxcui: '314076',
-    drugName: 'Lisinopril 10 MG Oral Tablet',
+    searchTerm: "Lisinopril",
+    rxcui: "314076",
+    drugName: "Lisinopril 10 MG Oral Tablet",
     timestamp: Date.now(),
   },
 });
 
 // Set available packages
 dispatch({
-  type: 'SET_AVAILABLE_PACKAGES',
+  type: "SET_AVAILABLE_PACKAGES",
   payload: packages, // NDCPackage[]
 });
 
 // Select a package
 dispatch({
-  type: 'SELECT_PACKAGE',
+  type: "SELECT_PACKAGE",
   payload: selectedPackage, // NDCPackage
 });
 
 // Set SIG
 dispatch({
-  type: 'SET_SIG',
+  type: "SET_SIG",
   payload: {
-    mode: 'structured',
+    mode: "structured",
     structured: {
       dose: 1,
       frequency: 2,
-      unit: 'tablet',
+      unit: "tablet",
     },
     daysSupply: 30,
   },
@@ -149,7 +149,7 @@ dispatch({
 
 // Set quantity
 dispatch({
-  type: 'SET_QUANTITY',
+  type: "SET_QUANTITY",
   payload: {
     totalQuantity: 60,
     packagesNeeded: 2,
@@ -173,18 +173,18 @@ import { useWorkflow } from '@/lib/workflow-context';
 
 export function MyNewStep() {
   const { state, dispatch, goNext } = useWorkflow();
-  
+
   const handleSubmit = () => {
     // Update state
     dispatch({
       type: 'SET_SOMETHING',
       payload: data,
     });
-    
+
     // Optionally auto-advance
     goNext();
   };
-  
+
   return (
     <div className="space-y-6">
       <div>
@@ -195,9 +195,9 @@ export function MyNewStep() {
           Step description
         </p>
       </div>
-      
+
       {/* Your step content */}
-      
+
     </div>
   );
 }
@@ -307,6 +307,7 @@ goToStep(WorkflowStep.CHOOSE_PACKAGE);
 ### Common Patterns
 
 **Section header:**
+
 ```typescript
 <div>
   <h2 className="text-2xl font-bold text-gray-900">Title</h2>
@@ -315,6 +316,7 @@ goToStep(WorkflowStep.CHOOSE_PACKAGE);
 ```
 
 **Success message:**
+
 ```typescript
 <div className="bg-green-50 border border-green-200 rounded-lg p-4">
   <p className="text-sm text-green-900">
@@ -324,6 +326,7 @@ goToStep(WorkflowStep.CHOOSE_PACKAGE);
 ```
 
 **Info box:**
+
 ```typescript
 <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
   <p className="text-sm text-blue-900">
@@ -333,6 +336,7 @@ goToStep(WorkflowStep.CHOOSE_PACKAGE);
 ```
 
 **Warning:**
+
 ```typescript
 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
   <p className="text-sm text-yellow-900">
@@ -370,41 +374,41 @@ goToStep(WorkflowStep.CHOOSE_PACKAGE);
 ```typescript
 // Check step validation
 const { state, canGoNext } = useWorkflow();
-console.log('Current step valid?', canGoNext);
+console.log("Current step valid?", canGoNext);
 
 // Check state
-console.log('Workflow state:', state);
+console.log("Workflow state:", state);
 
 // Check session storage
-const stored = sessionStorage.getItem('ndc_workflow_state');
-console.log('Session data:', JSON.parse(stored));
+const stored = sessionStorage.getItem("ndc_workflow_state");
+console.log("Session data:", JSON.parse(stored));
 ```
 
 ### Unit Testing (Future)
 
 ```typescript
-import { renderHook, act } from '@testing-library/react';
-import { useWorkflow } from '@/lib/workflow-context';
+import { renderHook, act } from "@testing-library/react";
+import { useWorkflow } from "@/lib/workflow-context";
 
-test('advances to next step when valid', () => {
+test("advances to next step when valid", () => {
   const { result } = renderHook(() => useWorkflow());
-  
+
   // Set valid data
   act(() => {
     result.current.dispatch({
-      type: 'SET_DRUG_SEARCH',
+      type: "SET_DRUG_SEARCH",
       payload: validData,
     });
   });
-  
+
   // Should be able to advance
   expect(result.current.canGoNext).toBe(true);
-  
+
   // Advance
   act(() => {
     result.current.goNext();
   });
-  
+
   // Check new step
   expect(result.current.state.currentStep).toBe(2);
 });
@@ -416,35 +420,35 @@ test('advances to next step when valid', () => {
 
 ### State not persisting
 
-**Problem:** State doesn't save to session  
+**Problem:** State doesn't save to session
 **Solution:** Check browser allows sessionStorage
 
 ```typescript
-if (typeof window !== 'undefined' && window.sessionStorage) {
+if (typeof window !== "undefined" && window.sessionStorage) {
   // Safe to use sessionStorage
 }
 ```
 
 ### Can't advance to next step
 
-**Problem:** Next button disabled  
+**Problem:** Next button disabled
 **Solution:** Check step validation
 
 ```typescript
 const { state } = useWorkflow();
 const rules = validationRules[state.currentStep];
-console.log('Step valid?', rules(state));
+console.log("Step valid?", rules(state));
 ```
 
 ### State resets unexpectedly
 
-**Problem:** State clears on page refresh  
+**Problem:** State clears on page refresh
 **Solution:** Check session expiration (1 hour)
 
 ```typescript
 const { state } = useWorkflow();
 const age = Date.now() - state.lastUpdatedAt;
-console.log('Session age (minutes):', age / 1000 / 60);
+console.log("Session age (minutes):", age / 1000 / 60);
 ```
 
 ---
@@ -479,7 +483,7 @@ For simple steps, auto-advance on completion:
 
 ```typescript
 const handleSubmit = () => {
-  dispatch({ type: 'SET_DATA', payload: data });
+  dispatch({ type: "SET_DATA", payload: data });
   goNext(); // Auto-advance
 };
 ```
@@ -491,7 +495,7 @@ If user goes back, clear dependent state:
 ```typescript
 // When going back from step 3 to step 2
 // Clear selected package
-dispatch({ type: 'DESELECT_PACKAGE' });
+dispatch({ type: "DESELECT_PACKAGE" });
 ```
 
 ### 5. Use Loading States
@@ -523,14 +527,14 @@ interface WorkflowContextValue {
   // State
   state: WorkflowState;
   dispatch: React.Dispatch<WorkflowAction>;
-  
+
   // Navigation
   canGoNext: boolean;
   canGoPrevious: boolean;
   goNext: () => void;
   goPrevious: () => void;
   goToStep: (step: WorkflowStep) => void;
-  
+
   // Helpers
   completeCurrentStep: () => void;
   resetWorkflow: () => void;
@@ -565,7 +569,7 @@ interface WorkflowContextValue {
 export function SimpleStep() {
   const { dispatch, goNext } = useWorkflow();
   const [value, setValue] = useState('');
-  
+
   const handleSubmit = () => {
     dispatch({
       type: 'SET_MY_DATA',
@@ -573,7 +577,7 @@ export function SimpleStep() {
     });
     goNext(); // Auto-advance
   };
-  
+
   return (
     <div className="space-y-6">
       <Input value={value} onChange={(e) => setValue(e.target.value)} />
@@ -591,7 +595,7 @@ export function SimpleStep() {
 export function AsyncStep() {
   const { state, dispatch } = useWorkflow();
   const [isLoading, setIsLoading] = useState(false);
-  
+
   const handleFetch = async () => {
     setIsLoading(true);
     try {
@@ -606,13 +610,13 @@ export function AsyncStep() {
       setIsLoading(false);
     }
   };
-  
+
   useEffect(() => {
     handleFetch();
   }, []);
-  
+
   if (isLoading) return <LoadingSpinner />;
-  
+
   return <div>Content</div>;
 }
 ```
@@ -622,7 +626,7 @@ export function AsyncStep() {
 ```typescript
 export function ConditionalStep() {
   const { state } = useWorkflow();
-  
+
   if (!state.selectedPackage) {
     return (
       <div className="bg-yellow-50 ...">
@@ -630,7 +634,7 @@ export function ConditionalStep() {
       </div>
     );
   }
-  
+
   return (
     <div>
       Selected: {state.selectedPackage.package.ndc}
@@ -649,8 +653,78 @@ export function ConditionalStep() {
 
 ---
 
+## AI SIG Parsing Feature
+
+### Overview
+
+The workflow now supports **AI-powered free-text SIG parsing**. Pharmacists can type prescription directions naturally, and the system automatically extracts structured data (dose, frequency, unit) for quantity calculations.
+
+### Usage
+
+1. **Select Free-Text Mode** in Step 3 (Enter SIG)
+2. **Type naturally**: "Take 1 tablet by mouth twice daily"
+3. **Proceed to Step 4** (Review Quantity)
+4. **System automatically parses** using AI (OpenAI GPT-4o-mini)
+5. **Review parsed result** and calculated quantity
+6. **Verify warnings** if any
+
+### Features
+
+- **AI Parsing** with 90%+ accuracy
+- **Regex Fallback** when AI unavailable
+- **Safety Warnings** for unusual doses
+- **Confidence Scoring** (0-1 scale)
+- **Automatic Quantity Calculation**
+
+### Example
+
+```typescript
+// User enters in free-text mode:
+"Take 1 tablet by mouth twice daily"
+
+// System parses to:
+{
+  dose: 1,
+  frequency: 2,
+  unit: "tablet",
+  route: "oral",
+  confidence: 0.95
+}
+
+// And calculates:
+totalQuantity = 1 × 2 × 30 = 60 tablets
+```
+
+### State Structure
+
+```typescript
+interface SIGData {
+  mode: "structured" | "freetext";
+  freetext?: string; // Original text
+  parsed?: {
+    dose: number;
+    frequency: number;
+    unit: string;
+    route?: string;
+    confidence?: number;
+  };
+  parsingWarnings?: string[];
+  daysSupply: number;
+}
+```
+
+### Documentation
+
+For detailed information:
+
+- [`/docs/AI_SIG_PIPELINE.md`](../AI_SIG_PIPELINE.md) - Technical documentation
+- [`/FREE_TEXT_SIG_EXPLAINED.md`](../../FREE_TEXT_SIG_EXPLAINED.md) - User-facing guide
+
+---
+
 **Questions?** Refer to:
+
 - `/docs/summaries/PR-01-MULTI-STEP-WORKFLOW-FOUNDATION.md`
 - `/WORKFLOW_GAP_ANALYSIS.md`
+- `/docs/AI_SIG_PIPELINE.md`
 - Inline code comments in workflow files
-

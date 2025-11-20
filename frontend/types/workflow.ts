@@ -3,7 +3,7 @@
  * Defines the multi-step workflow structure and state management
  */
 
-import { NDCPackage } from './api';
+import { NDCPackage } from "./api";
 
 /**
  * Workflow step enumeration
@@ -69,7 +69,7 @@ export interface PackageRecommendation {
  * SIG (prescription directions) data
  */
 export interface SIGData {
-  mode: 'structured' | 'freetext';
+  mode: "structured" | "freetext";
   structured?: {
     dose: number;
     frequency: number;
@@ -80,8 +80,13 @@ export interface SIGData {
     dose: number;
     frequency: number;
     unit: string;
+    route?: string;
+    duration?: number;
+    prn?: string;
+    additionalInstructions?: string;
     confidence?: number;
   };
+  parsingWarnings?: string[];
   daysSupply: number;
 }
 
@@ -113,10 +118,10 @@ export interface QuantityData {
 export interface WorkflowState {
   // Current step
   currentStep: WorkflowStep;
-  
+
   // Step completion status
   steps: Record<WorkflowStep, StepMetadata>;
-  
+
   // Workflow data
   drugSearch?: DrugSearchData;
   availablePackages?: NDCPackage[];
@@ -126,7 +131,7 @@ export interface WorkflowState {
   packageRecommendations?: PackageRecommendation[]; // System recommendations
   sig?: SIGData;
   quantity?: QuantityData;
-  
+
   // Metadata
   startedAt: number;
   lastUpdatedAt: number;
@@ -137,25 +142,25 @@ export interface WorkflowState {
  * Workflow actions
  */
 export type WorkflowAction =
-  | { type: 'NEXT_STEP' }
-  | { type: 'PREVIOUS_STEP' }
-  | { type: 'GO_TO_STEP'; payload: WorkflowStep }
-  | { type: 'SET_DRUG_SEARCH'; payload: DrugSearchData }
-  | { type: 'SET_AVAILABLE_PACKAGES'; payload: NDCPackage[] }
-  | { type: 'SELECT_PACKAGE'; payload: NDCPackage }
-  | { type: 'DESELECT_PACKAGE' }
-  | { type: 'TOGGLE_MULTI_PACKAGE_MODE'; payload: boolean }
-  | { type: 'ADD_PACKAGE_TO_SELECTION'; payload: NDCPackage }
-  | { type: 'REMOVE_PACKAGE_FROM_SELECTION'; payload: string } // NDC
-  | { type: 'CLEAR_PACKAGE_SELECTION' }
-  | { type: 'SET_PACKAGE_RECOMMENDATIONS'; payload: PackageRecommendation[] }
-  | { type: 'APPLY_PACKAGE_RECOMMENDATION'; payload: PackageRecommendation }
-  | { type: 'SET_SIG'; payload: SIGData }
-  | { type: 'SET_QUANTITY'; payload: QuantityData }
-  | { type: 'COMPLETE_STEP'; payload: WorkflowStep }
-  | { type: 'INVALIDATE_STEP'; payload: WorkflowStep }
-  | { type: 'RESET_WORKFLOW' }
-  | { type: 'RESTORE_WORKFLOW'; payload: WorkflowState };
+  | { type: "NEXT_STEP" }
+  | { type: "PREVIOUS_STEP" }
+  | { type: "GO_TO_STEP"; payload: WorkflowStep }
+  | { type: "SET_DRUG_SEARCH"; payload: DrugSearchData }
+  | { type: "SET_AVAILABLE_PACKAGES"; payload: NDCPackage[] }
+  | { type: "SELECT_PACKAGE"; payload: NDCPackage }
+  | { type: "DESELECT_PACKAGE" }
+  | { type: "TOGGLE_MULTI_PACKAGE_MODE"; payload: boolean }
+  | { type: "ADD_PACKAGE_TO_SELECTION"; payload: NDCPackage }
+  | { type: "REMOVE_PACKAGE_FROM_SELECTION"; payload: string } // NDC
+  | { type: "CLEAR_PACKAGE_SELECTION" }
+  | { type: "SET_PACKAGE_RECOMMENDATIONS"; payload: PackageRecommendation[] }
+  | { type: "APPLY_PACKAGE_RECOMMENDATION"; payload: PackageRecommendation }
+  | { type: "SET_SIG"; payload: SIGData }
+  | { type: "SET_QUANTITY"; payload: QuantityData }
+  | { type: "COMPLETE_STEP"; payload: WorkflowStep }
+  | { type: "INVALIDATE_STEP"; payload: WorkflowStep }
+  | { type: "RESET_WORKFLOW" }
+  | { type: "RESTORE_WORKFLOW"; payload: WorkflowState };
 
 /**
  * Workflow validation rules
@@ -174,20 +179,28 @@ export interface StepValidationRules {
 export interface WorkflowContextValue {
   state: WorkflowState;
   dispatch: React.Dispatch<WorkflowAction>;
-  
+
   // Navigation helpers
   canGoNext: boolean;
   canGoPrevious: boolean;
   goNext: () => void;
   goPrevious: () => void;
   goToStep: (step: WorkflowStep) => void;
-  
+
   // State helpers
   completeCurrentStep: () => void;
   resetWorkflow: () => void;
-  
+
   // Persistence helpers
   saveToSession: () => void;
   loadFromSession: () => void;
-}
 
+  // Navigation interception helpers
+  registerNextInterceptor: (
+    handler: (() => Promise<boolean | void> | boolean | void) | null,
+  ) => void;
+  navigationState: {
+    isLoading: boolean;
+  };
+  setNavigationState: (state: { isLoading: boolean }) => void;
+}

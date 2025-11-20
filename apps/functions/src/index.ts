@@ -3,37 +3,45 @@
  * Main entry point for Firebase Cloud Functions
  */
 
-import * as functions from 'firebase-functions';
-import * as admin from 'firebase-admin';
-import express from 'express';
-import cors from 'cors';
-import helmet from 'helmet';
+import * as functions from "firebase-functions";
+import * as admin from "firebase-admin";
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
 
-import { CalculateRequestSchema, AlternativesRequestSchema } from '@api-contracts';
-import { healthCheck } from './api/v1/health';
-import { calculateHandler } from './api/v1/calculate';
-import { searchHandler } from './api/v1/search';
-import { alternativesHandler } from './api/v1/alternatives';
+import {
+  CalculateRequestSchema,
+  AlternativesRequestSchema,
+} from "@api-contracts";
+import { healthCheck } from "./api/v1/health";
+import { calculateHandler } from "./api/v1/calculate";
+import { searchHandler } from "./api/v1/search";
+import { alternativesHandler } from "./api/v1/alternatives";
 import {
   getSystemAnalytics,
   getUserAnalytics,
   getAPIHealthMetrics,
-} from './api/v1/analytics';
-import { validateRequest } from './api/v1/middlewares/validate';
-import { errorHandler, asyncHandler } from './api/v1/middlewares/error';
-import { rateLimitMiddleware } from './api/v1/middlewares/rateLimit';
-import { redactionMiddleware } from './api/v1/middlewares/redact';
-import { loggingMiddleware } from './api/v1/middlewares/logging';
-import { optionalAuth, verifyToken, checkRole, UserRole } from './api/v1/middlewares/auth';
-import { getCorsOrigins } from '@core-config';
-import { createLogger } from '@core-guardrails';
+} from "./api/v1/analytics";
+import { validateRequest } from "./api/v1/middlewares/validate";
+import { errorHandler, asyncHandler } from "./api/v1/middlewares/error";
+import { rateLimitMiddleware } from "./api/v1/middlewares/rateLimit";
+import { redactionMiddleware } from "./api/v1/middlewares/redact";
+import { loggingMiddleware } from "./api/v1/middlewares/logging";
+import {
+  optionalAuth,
+  verifyToken,
+  checkRole,
+  UserRole,
+} from "./api/v1/middlewares/auth";
+import { getCorsOrigins } from "@core-config";
+import { createLogger } from "@core-guardrails";
 
-const logger = createLogger({ service: 'functions-main' });
+const logger = createLogger({ service: "functions-main" });
 
 // Initialize Firebase Admin SDK (if not already initialized)
 if (!admin.apps.length) {
   admin.initializeApp();
-  logger.info('Firebase Admin SDK initialized');
+  logger.info("Firebase Admin SDK initialized");
 }
 
 // Create Express app
@@ -41,26 +49,37 @@ const app = express();
 
 // CORS configuration with Vercel wildcard support
 const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+  origin: (
+    origin: string | undefined,
+    callback: (err: Error | null, allow?: boolean) => void,
+  ) => {
     const allowedOrigins = getCorsOrigins();
-    
+
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) {
       return callback(null, true);
     }
-    
+
+    // DEVELOPMENT: Always allow localhost origins
+    if (
+      origin.startsWith("http://localhost:") ||
+      origin.startsWith("http://127.0.0.1:")
+    ) {
+      return callback(null, true);
+    }
+
     // Check exact matches
     if (allowedOrigins.includes(origin)) {
       return callback(null, true);
     }
-    
+
     // Allow all Vercel preview/production deployments
-    if (origin.endsWith('.vercel.app')) {
+    if (origin.endsWith(".vercel.app")) {
       return callback(null, true);
     }
-    
+
     // Reject other origins
-    callback(new Error('Not allowed by CORS'));
+    callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
 };
@@ -73,58 +92,58 @@ app.use(loggingMiddleware); // Request/response logging with correlation IDs
 app.use(redactionMiddleware);
 
 // Public Routes (no authentication required)
-app.get('/v1/health', asyncHandler(healthCheck));
+app.get("/v1/health", asyncHandler(healthCheck));
 
 // Search endpoint (optional authentication)
 app.post(
-  '/v1/search',
+  "/v1/search",
   asyncHandler(optionalAuth), // Optional auth - allows both authenticated and anonymous users
   asyncHandler(rateLimitMiddleware), // Rate limiting based on auth status
-  asyncHandler(searchHandler)
+  asyncHandler(searchHandler),
 );
 
 // Protected Routes (authentication required)
 // Note: For MVP, we're making /v1/calculate require authentication
 // In production, you might want to use optionalAuth for anonymous calculations with stricter rate limits
 app.post(
-  '/v1/calculate',
+  "/v1/calculate",
   asyncHandler(optionalAuth), // Optional auth - allows both authenticated and anonymous users
   asyncHandler(rateLimitMiddleware), // Rate limiting based on auth status
   validateRequest(CalculateRequestSchema),
-  asyncHandler(calculateHandler)
+  asyncHandler(calculateHandler),
 );
 
 // Alternatives endpoint (requires authentication)
 app.post(
-  '/v1/alternatives',
+  "/v1/alternatives",
   asyncHandler(verifyToken), // Requires authentication
   asyncHandler(rateLimitMiddleware),
   validateRequest(AlternativesRequestSchema),
-  asyncHandler(alternativesHandler)
+  asyncHandler(alternativesHandler),
 );
 
 // Analytics endpoints (require authentication)
 // System analytics (admin only)
 app.get(
-  '/v1/analytics/system',
+  "/v1/analytics/system",
   asyncHandler(verifyToken),
   checkRole([UserRole.ADMIN]),
-  asyncHandler(getSystemAnalytics)
+  asyncHandler(getSystemAnalytics),
 );
 
 // User-specific analytics (user can see own, admin can see any)
 app.get(
-  '/v1/analytics/users/:userId',
+  "/v1/analytics/users/:userId",
   asyncHandler(verifyToken),
-  asyncHandler(getUserAnalytics)
+  asyncHandler(getUserAnalytics),
 );
 
 // API health metrics (admin only)
 app.get(
-  '/v1/analytics/health',
+  "/v1/analytics/health",
   asyncHandler(verifyToken),
   checkRole([UserRole.ADMIN]),
-  asyncHandler(getAPIHealthMetrics)
+  asyncHandler(getAPIHealthMetrics),
 );
 
 // Error handling (must be last)
@@ -132,13 +151,11 @@ app.use(errorHandler);
 
 // Export Cloud Function
 export const api = functions
-  .region('us-central1')
+  .region("us-central1")
   .runWith({
-    memory: '512MB',
+    memory: "512MB",
     timeoutSeconds: 60,
   })
-  .https
-  .onRequest(app);
+  .https.onRequest(app);
 
-logger.info('NDC Calculator functions initialized with authentication');
-
+logger.info("NDC Calculator functions initialized with authentication");
