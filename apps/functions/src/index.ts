@@ -17,6 +17,7 @@ import { healthCheck } from "./api/v1/health";
 import { calculateHandler } from "./api/v1/calculate";
 import { searchHandler } from "./api/v1/search";
 import { alternativesHandler } from "./api/v1/alternatives";
+import { parseSigHandler } from "./api/v1/parse-sig";
 import {
   getSystemAnalytics,
   getUserAnalytics,
@@ -100,6 +101,14 @@ app.post(
   asyncHandler(optionalAuth), // Optional auth - allows both authenticated and anonymous users
   asyncHandler(rateLimitMiddleware), // Rate limiting based on auth status
   asyncHandler(searchHandler),
+);
+
+// SIG Parser endpoint (optional authentication)
+app.post(
+  "/v1/sig/parse",
+  asyncHandler(optionalAuth), // Optional auth
+  asyncHandler(rateLimitMiddleware),
+  asyncHandler(parseSigHandler),
 );
 
 // Protected Routes (authentication required)

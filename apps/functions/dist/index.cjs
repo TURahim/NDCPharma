@@ -4298,7 +4298,7 @@ var require_dbcs_data = __commonJS({
       // == Japanese/ShiftJIS ====================================================
       // All japanese encodings are based on JIS X set of standards:
       // JIS X 0201 - Single-byte encoding of ASCII + ¥ + Kana chars at 0xA1-0xDF.
-      // JIS X 0208 - Main set of 6879 characters, placed in 94x94 plane, to be encoded by 2 bytes. 
+      // JIS X 0208 - Main set of 6879 characters, placed in 94x94 plane, to be encoded by 2 bytes.
       //              Has several variations in 1978, 1983, 1990 and 1997.
       // JIS X 0212 - Supplementary plane of 6067 chars in 94x94 plane. 1990. Effectively dead.
       // JIS X 0213 - Extension and modern replacement of 0208 and 0212. Total chars: 11233.
@@ -4315,7 +4315,7 @@ var require_dbcs_data = __commonJS({
       //               0x8F, (0xA1-0xFE)x2 - 0212 plane (94x94).
       //  * JIS X 208: 7-bit, direct encoding of 0208. Byte ranges: 0x21-0x7E (94 values). Uncommon.
       //               Used as-is in ISO2022 family.
-      //  * ISO2022-JP: Stateful encoding, with escape sequences to switch between ASCII, 
+      //  * ISO2022-JP: Stateful encoding, with escape sequences to switch between ASCII,
       //                0201-1976 Roman, 0208-1978, 0208-1983.
       //  * ISO2022-JP-1: Adds esc seq for 0212-1990.
       //  * ISO2022-JP-2: Adds esc seq for GB2313-1980, KSX1001-1992, ISO8859-1, ISO8859-7.
@@ -4426,7 +4426,7 @@ var require_dbcs_data = __commonJS({
       //  * Windows CP 951: Microsoft variant of Big5-HKSCS-2001. Seems to be never public. http://me.abelcheung.org/articles/research/what-is-cp951/
       //  * Big5-2003 (Taiwan standard) almost superset of cp950.
       //  * Unicode-at-on (UAO) / Mozilla 1.8. Falling out of use on the Web. Not supported by other browsers.
-      //  * Big5-HKSCS (-2001, -2004, -2008). Hong Kong standard. 
+      //  * Big5-HKSCS (-2001, -2004, -2008). Hong Kong standard.
       //    many unicode code points moved from PUA to Supplementary plane (U+2XXXX) over the years.
       //    Plus, it has 4 combining sequences.
       //    Seems that Mozilla refused to support it for 10 yrs. https://bugzilla.mozilla.org/show_bug.cgi?id=162431 https://bugzilla.mozilla.org/show_bug.cgi?id=310299
@@ -4437,7 +4437,7 @@ var require_dbcs_data = __commonJS({
       //    In the encoder, it might make sense to support encoding old PUA mappings to Big5 bytes seq-s.
       //    Official spec: http://www.ogcio.gov.hk/en/business/tech_promotion/ccli/terms/doc/2003cmp_2008.txt
       //                   http://www.ogcio.gov.hk/tc/business/tech_promotion/ccli/terms/doc/hkscs-2008-big5-iso.txt
-      // 
+      //
       // Current understanding of how to deal with Big5(-HKSCS) is in the Encoding Standard, http://encoding.spec.whatwg.org/#big5-encoder
       // Unicode mapping (http://www.unicode.org/Public/MAPPINGS/OBSOLETE/EASTASIA/OTHER/BIG5.TXT) is said to be wrong.
       "windows950": "cp950",
@@ -40003,6 +40003,62 @@ var helmet = Object.assign(
 
 // ../../packages/api-contracts/src/calculate.schema.ts
 init_zod();
+var ParsedSigSchema = external_exports.object({
+  /**
+   * Dose per administration (e.g., 2 for "2 tablets")
+   */
+  dose: external_exports.number().positive(),
+  /**
+   * Frequency per day (e.g., 2 for "twice daily")
+   */
+  frequency: external_exports.number().positive(),
+  /**
+   * Unit (e.g., "tablet", "capsule", "mL")
+   */
+  unit: external_exports.string().min(1),
+  /**
+   * Route of administration (e.g., "oral", "subcutaneous")
+   */
+  route: external_exports.string().optional(),
+  /**
+   * Duration in days (if specified in SIG text)
+   */
+  duration: external_exports.number().int().positive().optional(),
+  /**
+   * PRN (as needed) instructions
+   */
+  prn: external_exports.string().optional(),
+  /**
+   * Additional instructions
+   */
+  additionalInstructions: external_exports.string().optional(),
+  /**
+   * Confidence score (0-1) if parsed by AI
+   */
+  confidence: external_exports.number().min(0).max(1).optional()
+});
+var StructuredSigSchema = external_exports.object({
+  mode: external_exports.literal("structured"),
+  dose: external_exports.number().positive(),
+  frequency: external_exports.number().positive(),
+  unit: external_exports.string().min(1)
+});
+var FreeTextSigSchema = external_exports.object({
+  mode: external_exports.literal("freetext"),
+  text: external_exports.string().min(5).max(500),
+  /**
+   * Optional drug context to help AI parser
+   */
+  drugContext: external_exports.object({
+    dosageForm: external_exports.string().optional(),
+    strength: external_exports.string().optional(),
+    route: external_exports.string().optional()
+  }).optional()
+});
+var SigInputSchema = external_exports.discriminatedUnion("mode", [
+  StructuredSigSchema,
+  FreeTextSigSchema
+]);
 var CalculateRequestSchema = external_exports.object({
   /**
    * Drug name or RxCUI
@@ -40016,28 +40072,13 @@ var CalculateRequestSchema = external_exports.object({
      * RxCUI if already known
      */
     rxcui: external_exports.string().optional()
-  }).refine(
-    (data) => data.name || data.rxcui,
-    { message: "Either name or rxcui must be provided" }
-  ),
-  /**
-   * Structured SIG (prescription directions)
-   * MVP: Structured input only
-   */
-  sig: external_exports.object({
-    /**
-     * Dose per administration (e.g., 2 for "2 tablets")
-     */
-    dose: external_exports.number().positive(),
-    /**
-     * Frequency per day (e.g., 2 for "twice daily")
-     */
-    frequency: external_exports.number().positive(),
-    /**
-     * Unit (e.g., "tablet", "capsule")
-     */
-    unit: external_exports.string().min(1)
+  }).refine((data) => data.name || data.rxcui, {
+    message: "Either name or rxcui must be provided"
   }),
+  /**
+   * SIG (prescription directions) - structured or free-text
+   */
+  sig: SigInputSchema,
   /**
    * Days' supply (1-365)
    */
@@ -40138,6 +40179,32 @@ var AIInsightsSchema = external_exports.object({
     rating: external_exports.enum(["low", "medium", "high"])
   }).optional()
 });
+var SigParserMetadataSchema = external_exports.object({
+  /**
+   * Whether AI was used to parse SIG
+   */
+  usedAI: external_exports.boolean(),
+  /**
+   * Parsed SIG result
+   */
+  parsed: ParsedSigSchema.optional(),
+  /**
+   * Original free-text (if applicable)
+   */
+  originalText: external_exports.string().optional(),
+  /**
+   * Parser warnings
+   */
+  warnings: external_exports.array(external_exports.string()).optional(),
+  /**
+   * Execution time for parsing (ms)
+   */
+  executionTime: external_exports.number().optional(),
+  /**
+   * AI cost for parsing (if AI was used)
+   */
+  aiCost: external_exports.number().optional()
+});
 var MetadataSchema = external_exports.object({
   /**
    * Whether AI was used for recommendations
@@ -40154,7 +40221,11 @@ var MetadataSchema = external_exports.object({
   /**
    * Estimated AI cost (if AI was used)
    */
-  aiCost: external_exports.number().optional()
+  aiCost: external_exports.number().optional(),
+  /**
+   * SIG parser metadata (if free-text SIG was provided)
+   */
+  sigParser: SigParserMetadataSchema.optional()
 });
 var CalculateResponseSchema = external_exports.object({
   /**
@@ -41590,7 +41661,7 @@ var CachedFDAClient = class {
   }
   /**
    * Get NDC packages by RxCUI with caching
-   * 
+   *
    * @param rxcui RxNorm Concept Unique Identifier
    * @param options Search options + skipCache
    * @returns Array of NDC packages
@@ -41648,7 +41719,7 @@ var CachedFDAClient = class {
   }
   /**
    * Get NDC details with caching
-   * 
+   *
    * @param packageNdc Package NDC (11-digit format)
    * @param options Options + skipCache
    * @returns NDC details or null if not found
@@ -41703,7 +41774,7 @@ var CachedFDAClient = class {
   }
   /**
    * Validate NDC with caching
-   * 
+   *
    * @param ndc NDC code to validate
    * @param options Options + skipCache
    * @returns Validation result with status
@@ -41779,10 +41850,10 @@ var FDAClient = class {
   /**
    * Check if a drug is available in the FDA NDC Directory
    * Quick check to verify if an RxCUI has any NDC records
-   * 
+   *
    * @param rxcui RxNorm Concept Unique Identifier
    * @returns True if drug has FDA NDC records, false otherwise
-   * 
+   *
    * @example
    * ```typescript
    * const isAvailable = await fdaClient.checkDrugAvailability('104377');
@@ -41805,11 +41876,11 @@ var FDAClient = class {
   /**
    * Get NDC packages by RxCUI
    * Returns all NDC packages associated with a given RxCUI
-   * 
+   *
    * @param rxcui RxNorm Concept Unique Identifier
    * @param options Search options (limit, skip, activeOnly, dosageForm)
    * @returns Array of NDC packages
-   * 
+   *
    * @example
    * ```typescript
    * const packages = await fdaClient.getNDCsByRxCUI('104377', {
@@ -41842,10 +41913,10 @@ var FDAClient = class {
   /**
    * Get NDC details by package NDC
    * Returns detailed information for a specific NDC package
-   * 
+   *
    * @param packageNdc Package NDC (11-digit format)
    * @returns NDC details or null if not found
-   * 
+   *
    * @example
    * ```typescript
    * const details = await fdaClient.getNDCDetails('00071-0156-23');
@@ -41868,10 +41939,10 @@ var FDAClient = class {
   /**
    * Validate NDC code
    * Checks both format and FDA database status
-   * 
+   *
    * @param ndc NDC code to validate
    * @returns Validation result with status
-   * 
+   *
    * @example
    * ```typescript
    * const validation = await fdaClient.validateNDC('00071-0156-23');
@@ -41910,11 +41981,11 @@ var FDAClient = class {
   /**
    * Search NDCs by generic name
    * Returns all NDC packages for drugs with the given generic name
-   * 
+   *
    * @param genericName Generic drug name
    * @param options Search options
    * @returns Array of NDC packages
-   * 
+   *
    * @example
    * ```typescript
    * const packages = await fdaClient.searchByGenericName('lisinopril', {
@@ -41947,10 +42018,10 @@ var FDAClient = class {
   /**
    * Get available dosage forms for a drug
    * Returns unique dosage forms for all packages of a given RxCUI
-   * 
+   *
    * @param rxcui RxNorm Concept Unique Identifier
    * @returns Array of dosage forms
-   * 
+   *
    * @example
    * ```typescript
    * const forms = await fdaClient.getDosageForms('104377');
@@ -41968,11 +42039,11 @@ var FDAClient = class {
   /**
    * Get package sizes for a specific dosage form
    * Returns available package sizes grouped by dosage form
-   * 
+   *
    * @param rxcui RxNorm Concept Unique Identifier
    * @param dosageForm Dosage form to filter by
    * @returns Array of package sizes
-   * 
+   *
    * @example
    * ```typescript
    * const sizes = await fdaClient.getPackageSizes('104377', 'TABLET');
@@ -41993,11 +42064,11 @@ var FDAClient = class {
   /**
    * Get NDC packages by batch list of NDC codes
    * Returns detailed package information for each NDC
-   * 
+   *
    * @param ndcList Array of NDC codes
    * @param options Search options (activeOnly, dosageForm)
    * @returns Array of NDC packages
-   * 
+   *
    * @example
    * ```typescript
    * const ndcs = ['00071-0156-23', '00071-0156-34'];
@@ -50423,7 +50494,7 @@ var NDCRecommender = class {
   /**
    * Get enhanced NDC recommendation
    * Tries AI first, falls back to algorithm if AI fails
-   * 
+   *
    * @param request Recommendation request
    * @returns Enhanced recommendation
    */
@@ -50456,7 +50527,7 @@ var NDCRecommender = class {
   /**
    * Get algorithmic recommendation (deterministic)
    * Selects packages to minimize waste
-   * 
+   *
    * @param request Recommendation request
    * @returns Package recommendations
    */
@@ -50738,7 +50809,464 @@ function generateFallbackResponse(request) {
 // src/api/v1/calculate.ts
 init_src2();
 init_src();
-var logger8 = createLogger({ service: "CalculateEndpoint" });
+
+// src/services/sig-parser/aiSigParser.ts
+init_src2();
+
+// src/services/sig-parser/prompts.ts
+var SIG_PARSER_SYSTEM_PROMPT = `You are an expert pharmaceutical AI assistant specializing in parsing prescription directions (SIG - Signatura) into structured data.
+
+**Your Task:**
+Parse free-text prescription directions into structured fields: dose, frequency, unit, route, duration, PRN instructions, and additional instructions.
+
+**Key Principles:**
+1. Patient safety is paramount - if dosing is ambiguous or potentially unsafe, flag it with low confidence
+2. Extract exact values from the text - do not infer or assume missing information
+3. Normalize units consistently (e.g., "tablet" not "tab", "mL" not "ml")
+4. Recognize common abbreviations: BID (2x daily), TID (3x daily), QID (4x daily), QD (once daily), QHS (at bedtime), PRN (as needed)
+5. Handle ranges by using the lower value for dose (e.g., "1-2 tablets" \u2192 dose: 1, with note in additionalInstructions)
+6. Extract route of administration when specified (oral, subcutaneous, topical, etc.)
+7. Extract duration if mentioned in days
+
+**Output Format:**
+You must respond with a valid JSON object following this exact structure:
+{
+  "parsed": {
+    "dose": number (required, quantity per administration),
+    "frequency": number (required, times per day),
+    "unit": string (required, e.g., "tablet", "capsule", "mL", "puff", "unit", "drop"),
+    "route": string (optional, e.g., "oral", "subcutaneous", "topical"),
+    "duration": number (optional, in days if specified in text),
+    "prn": string (optional, as-needed instructions),
+    "additionalInstructions": string (optional, special instructions like "with food", "at bedtime")
+  },
+  "confidence": number (0-1, how confident you are in the parsing),
+  "warnings": [string] (array of safety warnings or ambiguities),
+  "reasoning": string (brief explanation of parsing decisions)
+}
+
+**Confidence Scoring:**
+- 1.0: Perfect clarity, no ambiguity
+- 0.8-0.9: Clear intent, minor assumptions
+- 0.6-0.7: Some ambiguity, reasonable interpretation
+- 0.4-0.5: Significant ambiguity, multiple valid interpretations
+- < 0.4: Highly ambiguous or potentially unsafe
+
+**Safety Warnings to Flag:**
+- Unusually high doses
+- Frequency > 8 times per day
+- Ambiguous dosing (e.g., "1-2 tablets")
+- Missing critical information
+- Conflicting instructions
+- Non-standard abbreviations
+
+**Examples of Common Patterns:**
+- "Take 1 tablet twice daily" \u2192 dose: 1, frequency: 2, unit: "tablet"
+- "Inject 10 units once daily" \u2192 dose: 10, frequency: 1, unit: "unit", route: "subcutaneous"
+- "Inhale 2 puffs BID" \u2192 dose: 2, frequency: 2, unit: "puff"
+- "Take 5 mL by mouth three times daily" \u2192 dose: 5, frequency: 3, unit: "mL", route: "oral"
+- "Take 1-2 tablets every 4-6 hours as needed for pain" \u2192 dose: 1, frequency: 4, unit: "tablet", prn: "as needed for pain", additionalInstructions: "Use range: 1-2 tablets"`;
+function generateSigParserPrompt(request) {
+  const { sigText, daysSupply, drugContext } = request;
+  let prompt = `Parse the following prescription directions (SIG):
+
+`;
+  prompt += `**SIG Text:** "${sigText}"
+
+`;
+  prompt += `**Days Supply:** ${daysSupply} days
+
+`;
+  if (drugContext) {
+    prompt += `**Drug Context:**
+`;
+    if (drugContext.genericName) {
+      prompt += `- Generic Name: ${drugContext.genericName}
+`;
+    }
+    if (drugContext.brandName) {
+      prompt += `- Brand Name: ${drugContext.brandName}
+`;
+    }
+    if (drugContext.dosageForm) {
+      prompt += `- Dosage Form: ${drugContext.dosageForm}
+`;
+    }
+    if (drugContext.strength) {
+      prompt += `- Strength: ${drugContext.strength}
+`;
+    }
+    if (drugContext.route) {
+      prompt += `- Route: ${drugContext.route}
+`;
+    }
+    prompt += `
+`;
+  }
+  prompt += `Please parse this SIG into structured JSON format as specified in the system prompt.`;
+  return prompt;
+}
+function validateSigParserResponse(response) {
+  if (!response || typeof response !== "object") {
+    return false;
+  }
+  const { parsed, confidence, warnings, reasoning } = response;
+  if (!parsed || typeof parsed !== "object") {
+    return false;
+  }
+  if (typeof parsed.dose !== "number" || parsed.dose <= 0) {
+    return false;
+  }
+  if (typeof parsed.frequency !== "number" || parsed.frequency <= 0) {
+    return false;
+  }
+  if (typeof parsed.unit !== "string" || !parsed.unit) {
+    return false;
+  }
+  if (typeof confidence !== "number" || confidence < 0 || confidence > 1) {
+    return false;
+  }
+  if (!Array.isArray(warnings)) {
+    return false;
+  }
+  if (typeof reasoning !== "string") {
+    return false;
+  }
+  return true;
+}
+
+// src/services/sig-parser/regexFallback.ts
+function parseWithRegex(sigText) {
+  const lower = sigText.toLowerCase();
+  const warnings = [];
+  const doseMatch = lower.match(/(\d+\.?\d*)/);
+  const dose = doseMatch ? parseFloat(doseMatch[1]) : null;
+  let frequency = 1;
+  if (lower.includes("twice") || lower.includes("two times") || lower.includes("2 times") || lower.includes("bid")) {
+    frequency = 2;
+  } else if (lower.includes("three times") || lower.includes("3 times") || lower.includes("tid")) {
+    frequency = 3;
+  } else if (lower.includes("four times") || lower.includes("4 times") || lower.includes("qid")) {
+    frequency = 4;
+  } else if (lower.includes("every 12 hours") || lower.includes("q12h")) {
+    frequency = 2;
+  } else if (lower.includes("every 8 hours") || lower.includes("q8h")) {
+    frequency = 3;
+  } else if (lower.includes("every 6 hours") || lower.includes("q6h")) {
+    frequency = 4;
+  } else if (lower.includes("every 4 hours") || lower.includes("q4h")) {
+    frequency = 6;
+  } else if (lower.includes("once") || lower.includes("1 time") || lower.includes("qd") || lower.includes("daily")) {
+    frequency = 1;
+  }
+  let unit = "tablet";
+  if (lower.includes("capsule")) {
+    unit = "capsule";
+  } else if (lower.includes("ml") || lower.includes("milliliter")) {
+    unit = "mL";
+  } else if (lower.includes("tablet") || lower.includes("tab")) {
+    unit = "tablet";
+  } else if (lower.includes("spray")) {
+    unit = "spray";
+  } else if (lower.includes("patch")) {
+    unit = "patch";
+  } else if (lower.includes("drop")) {
+    unit = "drop";
+  } else if (lower.includes("puff") || lower.includes("inhal")) {
+    unit = "puff";
+  } else if (lower.includes("unit")) {
+    unit = "unit";
+  } else if (lower.includes("gram") || lower.includes("gm")) {
+    unit = "gram";
+  } else if (lower.includes("application") || lower.includes("apply")) {
+    unit = "application";
+  }
+  let route;
+  if (lower.includes("by mouth") || lower.includes("oral") || lower.includes("po")) {
+    route = "oral";
+  } else if (lower.includes("subcutaneous") || lower.includes("subq") || lower.includes("sq")) {
+    route = "subcutaneous";
+  } else if (lower.includes("intramuscular") || lower.includes("im")) {
+    route = "intramuscular";
+  } else if (lower.includes("intravenous") || lower.includes("iv")) {
+    route = "intravenous";
+  } else if (lower.includes("topical") || lower.includes("apply to")) {
+    route = "topical";
+  } else if (lower.includes("inhal") || lower.includes("breath")) {
+    route = "inhalation";
+  }
+  let prn;
+  if (lower.includes("as needed") || lower.includes("prn")) {
+    const prnMatch = sigText.match(
+      /(?:as needed|prn)\s+(?:for\s+)?(.+?)(?:\.|$)/i
+    );
+    prn = prnMatch ? prnMatch[1].trim() : "as needed";
+  }
+  let duration;
+  const durationMatch = lower.match(/for\s+(\d+)\s+days?/);
+  if (durationMatch) {
+    duration = parseInt(durationMatch[1]);
+  }
+  let additionalInstructions;
+  if (lower.includes("with food") || lower.includes("with meals")) {
+    additionalInstructions = "Take with food";
+  } else if (lower.includes("without food") || lower.includes("on empty stomach")) {
+    additionalInstructions = "Take on empty stomach";
+  } else if (lower.includes("at bedtime") || lower.includes("qhs")) {
+    additionalInstructions = "Take at bedtime";
+  } else if (lower.includes("in the morning") || lower.includes("qam")) {
+    additionalInstructions = "Take in the morning";
+  }
+  if (sigText.match(/\d+-\d+/)) {
+    warnings.push("Dose range detected. Using lower value for calculation.");
+    if (!additionalInstructions) {
+      additionalInstructions = `Use range as directed: ${sigText.match(
+        /\d+-\d+\s+\w+/
+      )?.[0]}`;
+    }
+  }
+  if (!dose || !frequency || !unit) {
+    return null;
+  }
+  return {
+    dose,
+    frequency,
+    unit,
+    route,
+    duration,
+    prn,
+    additionalInstructions
+  };
+}
+
+// src/services/sig-parser/aiSigParser.ts
+var logger8 = createLogger({ service: "SigParser" });
+var openaiClient = null;
+var OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+var ENABLE_SIG_AI = process.env.ENABLE_SIG_AI === "true";
+if (OPENAI_API_KEY && ENABLE_SIG_AI) {
+  try {
+    openaiClient = new openai_default({
+      apiKey: OPENAI_API_KEY,
+      timeout: 3e4,
+      maxRetries: 2
+    });
+    logger8.info("OpenAI client initialized for SIG parsing");
+  } catch (error) {
+    logger8.warn("Failed to initialize OpenAI client for SIG parsing", {
+      error
+    });
+  }
+} else {
+  logger8.info("SIG AI parsing disabled (no API key or feature flag off)");
+}
+async function parseSigWithAI(request) {
+  const startTime = Date.now();
+  const validationError = validateRequest(request);
+  if (validationError) {
+    return {
+      success: false,
+      warnings: [],
+      confidence: 0,
+      method: "failed",
+      executionTime: Date.now() - startTime,
+      error: validationError
+    };
+  }
+  logger8.info("Parsing SIG with AI", {
+    sigLength: request.sigText.length,
+    hasDrugContext: !!request.drugContext
+  });
+  if (!openaiClient) {
+    logger8.warn("OpenAI unavailable, falling back to regex parser");
+    return fallbackToRegex(request, startTime);
+  }
+  try {
+    const userPrompt = generateSigParserPrompt(request);
+    const completion = await openaiClient.chat.completions.create({
+      model: "gpt-4o-mini",
+      // Use cheaper model for parsing
+      messages: [
+        { role: "system", content: SIG_PARSER_SYSTEM_PROMPT },
+        { role: "user", content: userPrompt }
+      ],
+      max_tokens: 500,
+      temperature: 0.2,
+      // Low temperature for consistent parsing
+      response_format: { type: "json_object" }
+    });
+    const executionTime = Date.now() - startTime;
+    const responseContent = completion.choices[0]?.message?.content;
+    if (!responseContent) {
+      throw new Error("Empty response from OpenAI");
+    }
+    let aiResponse;
+    try {
+      aiResponse = JSON.parse(responseContent);
+    } catch (parseError) {
+      logger8.error("Failed to parse AI response JSON", parseError);
+      return fallbackToRegex(request, startTime);
+    }
+    if (!validateSigParserResponse(aiResponse)) {
+      logger8.error("Invalid AI response structure", { response: aiResponse });
+      return fallbackToRegex(request, startTime);
+    }
+    const parsed = {
+      dose: aiResponse.parsed.dose,
+      frequency: aiResponse.parsed.frequency,
+      unit: aiResponse.parsed.unit,
+      route: aiResponse.parsed.route,
+      duration: aiResponse.parsed.duration,
+      prn: aiResponse.parsed.prn,
+      additionalInstructions: aiResponse.parsed.additionalInstructions,
+      confidence: aiResponse.confidence
+    };
+    const safetyWarnings = applySafetyChecks(parsed, request.sigText);
+    const allWarnings = [...aiResponse.warnings, ...safetyWarnings];
+    const usage = completion.usage || {
+      prompt_tokens: 0,
+      completion_tokens: 0
+    };
+    const aiCost = calculateCost(usage.prompt_tokens, usage.completion_tokens);
+    logger8.info("SIG parsed successfully with AI", {
+      confidence: aiResponse.confidence,
+      warningsCount: allWarnings.length,
+      executionTime,
+      aiCost
+    });
+    logger8.debug("AI parsing reasoning", { reasoning: aiResponse.reasoning });
+    return {
+      success: true,
+      parsed,
+      warnings: allWarnings,
+      confidence: aiResponse.confidence,
+      method: "ai",
+      executionTime,
+      aiCost
+    };
+  } catch (error) {
+    logger8.error("AI SIG parsing failed", error);
+    return fallbackToRegex(request, startTime);
+  }
+}
+function fallbackToRegex(request, startTime) {
+  logger8.info("Attempting regex fallback parsing");
+  const parsed = parseWithRegex(request.sigText);
+  const executionTime = Date.now() - startTime;
+  if (!parsed || !parsed.dose || !parsed.frequency || !parsed.unit) {
+    return {
+      success: false,
+      warnings: ["Unable to parse SIG automatically. Manual entry required."],
+      confidence: 0,
+      method: "failed",
+      executionTime,
+      error: {
+        code: "AI_PARSING_FAILED",
+        message: "Unable to parse SIG text. Please verify and enter quantity manually."
+      }
+    };
+  }
+  const fullParsed = {
+    dose: parsed.dose,
+    frequency: parsed.frequency,
+    unit: parsed.unit,
+    route: parsed.route,
+    duration: parsed.duration,
+    prn: parsed.prn,
+    additionalInstructions: parsed.additionalInstructions,
+    confidence: 0.6
+    // Lower confidence for regex parsing
+  };
+  const warnings = [
+    "SIG parsed using basic pattern matching (AI unavailable). Please verify accuracy."
+  ];
+  const safetyWarnings = applySafetyChecks(fullParsed, request.sigText);
+  warnings.push(...safetyWarnings);
+  logger8.info("SIG parsed with regex fallback", {
+    confidence: 0.6,
+    warningsCount: warnings.length,
+    executionTime
+  });
+  return {
+    success: true,
+    parsed: fullParsed,
+    warnings,
+    confidence: 0.6,
+    method: "regex_fallback",
+    executionTime
+  };
+}
+function validateRequest(request) {
+  if (!request.sigText || typeof request.sigText !== "string") {
+    return {
+      code: "INVALID_INPUT",
+      message: "SIG text is required"
+    };
+  }
+  if (request.sigText.trim().length < 5) {
+    return {
+      code: "TEXT_TOO_SHORT",
+      message: "SIG text must be at least 5 characters"
+    };
+  }
+  if (request.sigText.length > 500) {
+    return {
+      code: "TEXT_TOO_LONG",
+      message: "SIG text must be less than 500 characters"
+    };
+  }
+  if (!request.daysSupply || request.daysSupply <= 0) {
+    return {
+      code: "INVALID_INPUT",
+      message: "Days supply must be a positive number"
+    };
+  }
+  return null;
+}
+function applySafetyChecks(parsed, originalText) {
+  const warnings = [];
+  if (parsed.dose > 10 && ["tablet", "capsule"].includes(parsed.unit.toLowerCase())) {
+    warnings.push(
+      `High dose detected: ${parsed.dose} ${parsed.unit}. Please verify.`
+    );
+  }
+  if (parsed.frequency > 8) {
+    warnings.push(
+      `High frequency detected: ${parsed.frequency} times per day. Please verify.`
+    );
+  }
+  if (parsed.unit.toLowerCase() === "ml" && parsed.dose > 30) {
+    warnings.push(
+      `Large liquid dose detected: ${parsed.dose} mL. Please verify.`
+    );
+  }
+  if (parsed.unit.toLowerCase() === "unit" && parsed.dose > 100) {
+    warnings.push(
+      `\u26A0\uFE0F HIGH INSULIN DOSE: ${parsed.dose} units. VERIFY IMMEDIATELY.`
+    );
+  }
+  if (originalText.match(/\d+-\d+/)) {
+    warnings.push(
+      "Dose range detected in original text. Calculation uses lower value."
+    );
+  }
+  if (parsed.confidence && parsed.confidence < 0.7) {
+    warnings.push(
+      "Parsing confidence is low. Please review and verify the calculated quantity."
+    );
+  }
+  return warnings;
+}
+function calculateCost(promptTokens, completionTokens) {
+  const INPUT_COST = 15e-5;
+  const OUTPUT_COST = 6e-4;
+  const promptCost = promptTokens / 1e3 * INPUT_COST;
+  const completionCost = completionTokens / 1e3 * OUTPUT_COST;
+  return parseFloat((promptCost + completionCost).toFixed(6));
+}
+
+// src/api/v1/calculate.ts
+var logger9 = createLogger({ service: "CalculateEndpoint" });
 async function calculateHandler(req, res) {
   const startTime = Date.now();
   const request = req.body;
@@ -50746,7 +51274,7 @@ async function calculateHandler(req, res) {
   const warnings = [];
   const excluded = [];
   try {
-    logger8.info("Starting NDC calculation", {
+    logger9.info("Starting NDC calculation", {
       drug: request.drug,
       daysSupply: request.daysSupply
     });
@@ -50757,7 +51285,7 @@ async function calculateHandler(req, res) {
     if (request.drug.rxcui) {
       rxcui = request.drug.rxcui;
       drugName = request.drug.name || "Unknown Drug";
-      logger8.debug("Using provided RxCUI", { rxcui, drugName });
+      logger9.debug("Using provided RxCUI", { rxcui, drugName });
       dosageForm = void 0;
       strength = void 0;
       explanations.push({
@@ -50766,7 +51294,7 @@ async function calculateHandler(req, res) {
         details: { source: "user_provided" }
       });
     } else if (request.drug.name) {
-      logger8.debug("Normalizing drug name", { drugName: request.drug.name });
+      logger9.debug("Normalizing drug name", { drugName: request.drug.name });
       const normalizationResult = await nameToRxCui(request.drug.name);
       if (!normalizationResult.rxcui) {
         throw new Error(`Drug not found: ${request.drug.name}`);
@@ -50775,7 +51303,7 @@ async function calculateHandler(req, res) {
       drugName = normalizationResult.name;
       dosageForm = normalizationResult.dosageForm;
       strength = normalizationResult.strength;
-      logger8.info("Drug normalized successfully", {
+      logger9.info("Drug normalized successfully", {
         originalName: request.drug.name,
         normalizedName: drugName,
         rxcui,
@@ -50798,10 +51326,85 @@ async function calculateHandler(req, res) {
     } else {
       throw new Error("Either drug name or RxCUI must be provided");
     }
-    logger8.debug("Fetching NDC packages from FDA by RxCUI", { rxcui });
-    logger8.info("Attempting FDA RxCUI search", { rxcui, limit: 100 });
-    const allPackages = await fdaClient.getNDCsByRxCUI(rxcui, { limit: 100 });
-    logger8.info("FDA RxCUI search completed", {
+    let sigParserMetadata;
+    let parsedSig;
+    if (request.sig.mode === "freetext") {
+      logger9.info("Free-text SIG detected, initiating AI parsing");
+      const parserRequest = {
+        sigText: request.sig.text,
+        daysSupply: request.daysSupply,
+        drugContext: {
+          genericName: drugName,
+          dosageForm: dosageForm || request.sig.drugContext?.dosageForm,
+          strength: strength || request.sig.drugContext?.strength,
+          route: request.sig.drugContext?.route
+        }
+      };
+      const parserResult = await parseSigWithAI(parserRequest);
+      if (!parserResult.success || !parserResult.parsed) {
+        logger9.error("SIG parsing failed", {
+          error: parserResult.error,
+          method: parserResult.method
+        });
+        res.status(400).json({
+          success: false,
+          error: {
+            code: parserResult.error?.code || "SIG_PARSING_FAILED",
+            message: parserResult.error?.message || "Unable to parse prescription directions. Please use structured mode or verify the text.",
+            details: {
+              warnings: parserResult.warnings,
+              method: parserResult.method,
+              originalText: request.sig.text
+            }
+          }
+        });
+        return;
+      }
+      parsedSig = {
+        dose: parserResult.parsed.dose,
+        frequency: parserResult.parsed.frequency,
+        unit: parserResult.parsed.unit
+      };
+      warnings.push(...parserResult.warnings);
+      sigParserMetadata = {
+        usedAI: parserResult.method === "ai",
+        parsed: parserResult.parsed,
+        originalText: request.sig.text,
+        warnings: parserResult.warnings,
+        executionTime: parserResult.executionTime,
+        aiCost: parserResult.aiCost
+      };
+      explanations.push({
+        step: "parse_sig",
+        description: parserResult.method === "ai" ? `Parsed free-text SIG using AI (confidence: ${(parserResult.confidence * 100).toFixed(0)}%)` : `Parsed free-text SIG using pattern matching (confidence: ${(parserResult.confidence * 100).toFixed(0)}%)`,
+        details: {
+          method: parserResult.method,
+          originalText: request.sig.text,
+          parsed: parserResult.parsed,
+          confidence: parserResult.confidence,
+          warningsCount: parserResult.warnings.length
+        }
+      });
+      logger9.info("SIG parsed successfully", {
+        method: parserResult.method,
+        confidence: parserResult.confidence,
+        dose: parsedSig.dose,
+        frequency: parsedSig.frequency,
+        unit: parsedSig.unit
+      });
+    } else {
+      parsedSig = {
+        dose: request.sig.dose,
+        frequency: request.sig.frequency,
+        unit: request.sig.unit
+      };
+    }
+    logger9.debug("Fetching NDC packages from FDA by RxCUI", { rxcui });
+    logger9.info("Attempting FDA RxCUI search", { rxcui, limit: 100 });
+    const allPackages = await fdaClient.getNDCsByRxCUI(rxcui, {
+      limit: 100
+    });
+    logger9.info("FDA RxCUI search completed", {
       rxcui,
       packageCount: allPackages?.length || 0,
       hasResults: !!(allPackages && allPackages.length > 0)
@@ -50817,16 +51420,18 @@ async function calculateHandler(req, res) {
         }
       });
     } else {
-      logger8.error("FDA RxCUI search returned no packages", {
+      logger9.error("FDA RxCUI search returned no packages", {
         rxcui,
         drugName
       });
-      throw new Error(`FDA has no NDC packages for RxCUI ${rxcui}. This may indicate an issue with the FDA API or the RxCUI.`);
+      throw new Error(
+        `FDA has no NDC packages for RxCUI ${rxcui}. This may indicate an issue with the FDA API or the RxCUI.`
+      );
     }
     if (!allPackages || allPackages.length === 0) {
       throw new Error(`No NDC packages found for drug (RxCUI: ${rxcui})`);
     }
-    logger8.info("Package retrieval complete", {
+    logger9.info("Package retrieval complete", {
       rxcui,
       totalPackages: allPackages.length
     });
@@ -50855,12 +51460,15 @@ async function calculateHandler(req, res) {
       throw new Error("No active NDC packages available for this drug");
     }
     let filteredPackages = activePackages;
-    if (request.sig.unit) {
-      filteredPackages = filterByDosageFormFamily(activePackages, request.sig.unit);
+    if (parsedSig.unit) {
+      filteredPackages = filterByDosageFormFamily(
+        activePackages,
+        parsedSig.unit
+      );
       if (filteredPackages.length > 0) {
         explanations.push({
           step: "filter_dosage_form",
-          description: `Filtered to ${filteredPackages.length} packages matching dosage form family for "${request.sig.unit}"`,
+          description: `Filtered to ${filteredPackages.length} packages matching dosage form family for "${parsedSig.unit}"`,
           details: {
             originalCount: activePackages.length,
             filteredCount: filteredPackages.length
@@ -50869,14 +51477,16 @@ async function calculateHandler(req, res) {
       } else {
         filteredPackages = activePackages;
         warnings.push(
-          `No packages found matching dosage form "${request.sig.unit}". Showing all available dosage forms. Verify prescription carefully.`
+          `No packages found matching dosage form "${parsedSig.unit}". Showing all available dosage forms. Verify prescription carefully.`
         );
         explanations.push({
           step: "filter_dosage_form",
           description: "No dosage form match found - showing all active packages",
           details: {
-            requestedForm: request.sig.unit,
-            availableForms: Array.from(new Set(activePackages.map((p2) => p2.dosageForm)))
+            requestedForm: parsedSig.unit,
+            availableForms: Array.from(
+              new Set(activePackages.map((p2) => p2.dosageForm))
+            )
           }
         });
       }
@@ -50885,26 +51495,26 @@ async function calculateHandler(req, res) {
       (a2, b2) => (a2.packageSize?.quantity || 0) - (b2.packageSize?.quantity || 0)
     );
     const quantityResult = computeTotalQuantity(
-      request.sig,
+      parsedSig,
       { strength, dosageForm },
       request.daysSupply
     );
     const totalQuantity = quantityResult.totalQuantity;
     warnings.push(...quantityResult.warnings);
-    logger8.info("Calculated total quantity", {
-      dose: request.sig.dose,
-      frequency: request.sig.frequency,
+    logger9.info("Calculated total quantity", {
+      dose: parsedSig.dose,
+      frequency: parsedSig.frequency,
       daysSupply: request.daysSupply,
       totalQuantity,
       method: quantityResult.details?.method
     });
     explanations.push({
       step: "quantity_calculation",
-      description: quantityResult.details?.calculation || `Calculated total quantity: ${totalQuantity} ${request.sig.unit}`,
+      description: quantityResult.details?.calculation || `Calculated total quantity: ${totalQuantity} ${parsedSig.unit}`,
       details: {
         method: quantityResult.details?.method || "direct",
-        dose: request.sig.dose,
-        frequency: request.sig.frequency,
+        dose: parsedSig.dose,
+        frequency: parsedSig.frequency,
         daysSupply: request.daysSupply,
         result: totalQuantity
       }
@@ -50924,7 +51534,7 @@ async function calculateHandler(req, res) {
     warnings.push(...selection.warnings);
     const overfillPercentage = selection.overfillPercentage;
     const underfillPercentage = selection.underfillPercentage;
-    logger8.info("Selected package", {
+    logger9.info("Selected package", {
       ndc: selection.selected.ndc,
       packageSize: selection.selected.packageSize.quantity,
       overfillPercentage,
@@ -50945,24 +51555,29 @@ async function calculateHandler(req, res) {
       selection.selected.packageSize.quantity,
       totalQuantity
     );
-    const recommendedPackages = [{
-      ndc: selection.selected.ndc,
-      packageSize: selection.selected.packageSize.quantity,
-      unit: selection.selected.packageSize.unit,
-      dosageForm: selection.selected.dosageForm,
-      marketingStatus: selection.selected.marketingStatus,
-      isActive: selection.selected.isActive,
-      quantityNeeded: selection.selected.packageSize.quantity,
-      fillPrecision: fillMetrics.fillPrecision
-    }];
+    const recommendedPackages = [
+      {
+        ndc: selection.selected.ndc,
+        packageSize: selection.selected.packageSize.quantity,
+        unit: selection.selected.packageSize.unit,
+        dosageForm: selection.selected.dosageForm,
+        marketingStatus: selection.selected.marketingStatus,
+        isActive: selection.selected.isActive,
+        quantityNeeded: selection.selected.packageSize.quantity,
+        fillPrecision: fillMetrics.fillPrecision
+      }
+    ];
     let aiInsights;
     let metadata = {
       usedAI: false,
-      executionTime: 0
+      executionTime: 0,
       // Will be set at the end
+      sigParser: sigParserMetadata
     };
     if (ENABLE_OPENAI_ENHANCER) {
-      logger8.info("AI enhancement enabled, calling OpenAI recommender", { rxcui });
+      logger9.info("AI enhancement enabled, calling OpenAI recommender", {
+        rxcui
+      });
       try {
         const aiStartTime = Date.now();
         const rawAiRequest = {
@@ -50973,7 +51588,7 @@ async function calculateHandler(req, res) {
             strength
           },
           prescription: {
-            sig: `${request.sig.dose} ${request.sig.unit} ${request.sig.frequency} times daily`,
+            sig: `${parsedSig.dose} ${parsedSig.unit} ${parsedSig.frequency} times daily`,
             daysSupply: request.daysSupply,
             quantityNeeded: totalQuantity
           },
@@ -50986,9 +51601,11 @@ async function calculateHandler(req, res) {
           }))
         };
         const aiRequest = sanitizeForAI(rawAiRequest);
-        const aiResult = await ndcRecommender.getEnhancedRecommendation(aiRequest);
+        const aiResult = await ndcRecommender.getEnhancedRecommendation(
+          aiRequest
+        );
         const aiExecutionTime = Date.now() - aiStartTime;
-        logger8.info("AI recommendation received", {
+        logger9.info("AI recommendation received", {
           usedAI: aiResult.metadata.usedAI,
           algorithmicFallback: aiResult.metadata.algorithmicFallback,
           executionTime: aiExecutionTime
@@ -51006,7 +51623,8 @@ async function calculateHandler(req, res) {
           algorithmicFallback: aiResult.metadata.algorithmicFallback,
           executionTime: 0,
           // Will be set at the end
-          aiCost: aiResult.metadata.aiCost
+          aiCost: aiResult.metadata.aiCost,
+          sigParser: sigParserMetadata
         };
         if (aiResult.primary && recommendedPackages[0]) {
           if (aiResult.primary.ndc === recommendedPackages[0].ndc) {
@@ -51017,7 +51635,7 @@ async function calculateHandler(req, res) {
               source: "ai"
             };
           } else {
-            logger8.info("AI suggested different package than algorithm", {
+            logger9.info("AI suggested different package than algorithm", {
               algorithmNdc: recommendedPackages[0].ndc,
               aiNdc: aiResult.primary.ndc
             });
@@ -51038,14 +51656,15 @@ async function calculateHandler(req, res) {
           }
         });
       } catch (aiError) {
-        logger8.warn("AI enhancement failed, using algorithmic results", {
+        logger9.warn("AI enhancement failed, using algorithmic results", {
           error: aiError
         });
         metadata = {
           usedAI: false,
           algorithmicFallback: true,
-          executionTime: 0
+          executionTime: 0,
           // Will be set at the end
+          sigParser: sigParserMetadata
         };
         warnings.push(
           "AI enhancement unavailable. Recommendations are algorithm-based only."
@@ -51054,7 +51673,7 @@ async function calculateHandler(req, res) {
     }
     const executionTime = Date.now() - startTime;
     metadata.executionTime = executionTime;
-    logger8.info("Calculation completed successfully", {
+    logger9.info("Calculation completed successfully", {
       rxcui,
       totalQuantity,
       recommendedPackages: recommendedPackages.length,
@@ -51083,7 +51702,7 @@ async function calculateHandler(req, res) {
     res.status(200).json(response);
   } catch (error) {
     const executionTime = Date.now() - startTime;
-    logger8.error("Calculation failed", error, {
+    logger9.error("Calculation failed", error, {
       request,
       executionTime
     });
@@ -51107,7 +51726,7 @@ init_src2();
 
 // src/services/drug-search/inputParser.ts
 init_src2();
-var logger9 = createLogger({ service: "DrugSearch.InputParser" });
+var logger10 = createLogger({ service: "DrugSearch.InputParser" });
 var STRENGTH_UNITS = [
   "mg",
   "mcg",
@@ -51193,7 +51812,7 @@ function parseDrugQuery(drugName, explicitStrength) {
     dosageFormTokens: Array.from(new Set(dosageExtraction.tokens)),
     releaseTypeTokens: Array.from(new Set(releaseExtraction.tokens))
   };
-  logger9.debug("Parsed drug query", parsed);
+  logger10.debug("Parsed drug query", parsed);
   return parsed;
 }
 
@@ -51225,7 +51844,7 @@ function createSearchError(code, message, details) {
 }
 
 // src/services/drug-search/rxnormResolver.ts
-var logger10 = createLogger({ service: "DrugSearch.RxNormResolver" });
+var logger11 = createLogger({ service: "DrugSearch.RxNormResolver" });
 async function fallbackToFdaGeneric(baseName) {
   try {
     const packages = await fdaClient.searchByGenericName(baseName, { limit: 1 });
@@ -51249,7 +51868,7 @@ async function fallbackToFdaGeneric(baseName) {
       warnings: ["Resolved via FDA generic lookup"]
     };
   } catch (error) {
-    logger10.warn("FDA generic fallback failed", error, { baseName });
+    logger11.warn("FDA generic fallback failed", error, { baseName });
     return null;
   }
 }
@@ -51274,10 +51893,10 @@ async function resolveDrugConcept(parsedQuery, options = {}) {
   if (options.rxcui) {
     try {
       const resolved = await nameToRxCui(originalQuery || baseName);
-      logger10.info("Resolved drug via direct RxCUI path", { rxcui: resolved.rxcui });
+      logger11.info("Resolved drug via direct RxCUI path", { rxcui: resolved.rxcui });
       return mapRxNormResult(resolved);
     } catch (error) {
-      logger10.warn("Direct RxCUI resolution failed, falling back to name search", {
+      logger11.warn("Direct RxCUI resolution failed, falling back to name search", {
         rxcui: options.rxcui,
         error
       });
@@ -51285,10 +51904,10 @@ async function resolveDrugConcept(parsedQuery, options = {}) {
   }
   try {
     const normalized = await nameToRxCui(baseName);
-    logger10.info("RxNorm normalization succeeded", { rxcui: normalized.rxcui });
+    logger11.info("RxNorm normalization succeeded", { rxcui: normalized.rxcui });
     return mapRxNormResult(normalized);
   } catch (error) {
-    logger10.warn("RxNorm normalization failed", error, { baseName });
+    logger11.warn("RxNorm normalization failed", error, { baseName });
   }
   const fdaFallback = await fallbackToFdaGeneric(baseName);
   if (fdaFallback) {
@@ -51303,7 +51922,7 @@ async function resolveDrugConcept(parsedQuery, options = {}) {
 
 // src/services/drug-search/fdaPackageService.ts
 init_src2();
-var logger11 = createLogger({ service: "DrugSearch.FDAService" });
+var logger12 = createLogger({ service: "DrugSearch.FDAService" });
 var PAGE_SIZE = 100;
 var MAX_PAGES = 20;
 function splitByMarketingStatus(packages) {
@@ -51337,8 +51956,8 @@ function collectMetadata(packages) {
   };
 }
 async function fetchFdaPackagesForRxcui(rxcui, genericName) {
-  logger11.info("Fetching FDA packages", { rxcui, genericName });
-  let allPackages = [];
+  logger12.info("Fetching FDA packages", { rxcui, genericName });
+  const allPackages = [];
   let usedFallback = false;
   try {
     let page = 0;
@@ -51358,14 +51977,14 @@ async function fetchFdaPackagesForRxcui(rxcui, genericName) {
         break;
       }
     }
-    logger11.info("FDA packages retrieved via RxCUI", {
+    logger12.info("FDA packages retrieved via RxCUI", {
       rxcui,
       totalPackages: allPackages.length,
       pagesFetched: page
     });
   } catch (error) {
     if (error?.status === 404 && genericName) {
-      logger11.warn("RxCUI search failed, attempting generic name fallback", {
+      logger12.warn("RxCUI search failed, attempting generic name fallback", {
         rxcui,
         genericName,
         error: error.message
@@ -51389,16 +52008,20 @@ async function fetchFdaPackagesForRxcui(rxcui, genericName) {
           }
         }
         usedFallback = true;
-        logger11.info("FDA packages retrieved via generic name fallback", {
+        logger12.info("FDA packages retrieved via generic name fallback", {
           genericName,
           totalPackages: allPackages.length,
           pagesFetched: page
         });
       } catch (fallbackError) {
-        logger11.error("Generic name fallback also failed", fallbackError, {
-          genericName,
-          rxcui
-        });
+        logger12.error(
+          "Generic name fallback also failed",
+          fallbackError,
+          {
+            genericName,
+            rxcui
+          }
+        );
         throw createSearchError(
           "FDA_LOOKUP_FAILED",
           `FDA did not return any packages for "${genericName}". The drug may not be available in the FDA database.`,
@@ -51406,7 +52029,9 @@ async function fetchFdaPackagesForRxcui(rxcui, genericName) {
         );
       }
     } else {
-      logger11.error("FDA lookup failed without fallback", error, { rxcui });
+      logger12.error("FDA lookup failed without fallback", error, {
+        rxcui
+      });
       throw createSearchError(
         "FDA_LOOKUP_FAILED",
         "Unable to retrieve packages from FDA NDC Directory.",
@@ -51436,7 +52061,7 @@ async function fetchFdaPackagesForRxcui(rxcui, genericName) {
 
 // src/services/drug-search/packageNormalizer.ts
 init_src2();
-var logger12 = createLogger({ service: "DrugSearch.PackageNormalizer" });
+var logger13 = createLogger({ service: "DrugSearch.PackageNormalizer" });
 function toTitleCase(value) {
   if (!value) return "";
   return value.toLowerCase().split(" ").filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
@@ -51501,13 +52126,13 @@ function normalizePackages(packages) {
     };
     return normalizedPkg;
   });
-  logger12.debug("Normalized packages", { total: normalized.length });
+  logger13.debug("Normalized packages", { total: normalized.length });
   return normalized;
 }
 
 // src/services/drug-search/packageFilter.ts
 init_src2();
-var logger13 = createLogger({ service: "DrugSearch.PackageFilter" });
+var logger14 = createLogger({ service: "DrugSearch.PackageFilter" });
 function normalizeStrengthValue(value) {
   return value.toLowerCase().replace(/[\s-]/g, "");
 }
@@ -51527,7 +52152,7 @@ function filterPackages(packages, options) {
   if (options.strength) {
     filtered = filtered.filter((pkg) => packageMatchesStrength(pkg, options.strength));
     if (!filtered.length) {
-      logger13.warn("No packages match provided strength", { strength: options.strength });
+      logger14.warn("No packages match provided strength", { strength: options.strength });
       return { filtered, reason: "NO_MATCHING_STRENGTH" };
     }
   }
@@ -51536,7 +52161,7 @@ function filterPackages(packages, options) {
       (pkg) => packageMatchesDosageForm(pkg, options.dosageFormKeywords || [])
     );
     if (!filtered.length) {
-      logger13.warn("No packages match provided dosage form keywords", {
+      logger14.warn("No packages match provided dosage form keywords", {
         dosageForms: options.dosageFormKeywords
       });
       return { filtered, reason: "NO_MATCHING_DOSAGE_FORM" };
@@ -51546,7 +52171,7 @@ function filterPackages(packages, options) {
 }
 
 // src/services/drug-search/searchService.ts
-var logger14 = createLogger({ service: "DrugSearch.Service" });
+var logger15 = createLogger({ service: "DrugSearch.Service" });
 function mapPackagesForResponse(packages) {
   return packages.map((pkg) => {
     const marketingStatus = pkg.raw.marketingStatus ?? {
@@ -51646,7 +52271,7 @@ async function performDrugSearch(request, context) {
       allForms: packagesResult.uniqueForms
     }
   };
-  logger14.info("Drug search completed", {
+  logger15.info("Drug search completed", {
     requestId: context.requestId,
     correlationId: context.correlationId,
     rxcui: concept.rxcui,
@@ -51656,7 +52281,7 @@ async function performDrugSearch(request, context) {
 }
 
 // src/api/v1/search.ts
-var logger15 = createLogger({ service: "SearchEndpoint" });
+var logger16 = createLogger({ service: "SearchEndpoint" });
 async function searchHandler(req, res) {
   const startTime = Date.now();
   const request = req.body;
@@ -51670,7 +52295,7 @@ async function searchHandler(req, res) {
       success: true,
       data: result
     };
-    logger15.info("Drug search succeeded", {
+    logger16.info("Drug search succeeded", {
       requestId: context.requestId,
       correlationId: context.correlationId,
       durationMs: Date.now() - startTime,
@@ -51679,7 +52304,7 @@ async function searchHandler(req, res) {
     res.status(200).json(response);
   } catch (error) {
     if (error instanceof DrugSearchError) {
-      logger15.warn("Drug search failed with known error", {
+      logger16.warn("Drug search failed with known error", {
         code: error.code,
         message: error.message,
         details: error.details,
@@ -51698,7 +52323,7 @@ async function searchHandler(req, res) {
       return;
     }
     const err = error;
-    logger15.error("Drug search failed unexpectedly", err, {
+    logger16.error("Drug search failed unexpectedly", err, {
       durationMs: Date.now() - startTime,
       request
     });
@@ -51718,7 +52343,7 @@ async function searchHandler(req, res) {
 
 // src/api/v1/alternatives.ts
 init_src2();
-var logger16 = createLogger({ service: "AlternativesEndpoint" });
+var logger17 = createLogger({ service: "AlternativesEndpoint" });
 var fdaClient2 = new FDAClient();
 async function alternativesHandler(req, res) {
   const startTime = Date.now();
@@ -51746,7 +52371,7 @@ async function alternativesHandler(req, res) {
       return;
     }
     const { drug } = validation.data;
-    logger16.info("Finding drug alternatives", {
+    logger17.info("Finding drug alternatives", {
       drugName: drug.name,
       rxcui: drug.rxcui,
       // @ts-expect-error - req.user is added by auth middleware
@@ -51754,7 +52379,7 @@ async function alternativesHandler(req, res) {
     });
     const relatedDrugs = await getAlternativeDrugs(drug.rxcui);
     if (relatedDrugs.length === 0) {
-      logger16.info("No related drugs found in RxNorm", { rxcui: drug.rxcui });
+      logger17.info("No related drugs found in RxNorm", { rxcui: drug.rxcui });
       res.json({
         success: true,
         data: {
@@ -51765,7 +52390,7 @@ async function alternativesHandler(req, res) {
       });
       return;
     }
-    logger16.info(`Found ${relatedDrugs.length} related drugs in RxNorm`, {
+    logger17.info(`Found ${relatedDrugs.length} related drugs in RxNorm`, {
       rxcui: drug.rxcui,
       relatedCount: relatedDrugs.length
     });
@@ -51782,7 +52407,7 @@ async function alternativesHandler(req, res) {
         break;
       }
     }
-    logger16.info(`Found ${fdaApprovedAlternatives.length} FDA-approved alternatives`, {
+    logger17.info(`Found ${fdaApprovedAlternatives.length} FDA-approved alternatives`, {
       rxcui: drug.rxcui,
       fdaApprovedCount: fdaApprovedAlternatives.length
     });
@@ -51810,7 +52435,7 @@ async function alternativesHandler(req, res) {
 ${alt.recommendation}`
     }));
     const executionTime = Date.now() - startTime;
-    logger16.info("Alternatives search completed", {
+    logger17.info("Alternatives search completed", {
       drugName: drug.name,
       rxcui: drug.rxcui,
       alternativeCount: alternatives.length,
@@ -51826,7 +52451,7 @@ ${alt.recommendation}`
     });
   } catch (error) {
     const executionTime = Date.now() - startTime;
-    logger16.error("Alternatives search failed", error, {
+    logger17.error("Alternatives search failed", error, {
       executionTime
     });
     res.status(500).json({
@@ -51842,11 +52467,76 @@ ${alt.recommendation}`
   }
 }
 
+// src/api/v1/parse-sig.ts
+init_src2();
+var logger18 = createLogger({ service: "ParseSigEndpoint" });
+async function parseSigHandler(req, res) {
+  const startTime = Date.now();
+  try {
+    const request = req.body;
+    logger18.info("Parsing SIG request received", {
+      sigLength: request.sigText?.length,
+      daysSupply: request.daysSupply,
+      hasDrugContext: !!request.drugContext
+    });
+    const result = await parseSigWithAI(request);
+    const executionTime = Date.now() - startTime;
+    if (!result.success) {
+      res.status(400).json({
+        success: false,
+        error: {
+          code: result.error?.code || "SIG_PARSING_FAILED",
+          message: result.error?.message || "Unable to parse SIG directions",
+          details: {
+            method: result.method,
+            warnings: result.warnings,
+            executionTime
+          }
+        }
+      });
+      return;
+    }
+    res.status(200).json({
+      success: true,
+      data: {
+        parsed: result.parsed,
+        warnings: result.warnings,
+        confidence: result.confidence,
+        method: result.method
+      },
+      metadata: {
+        executionTime,
+        usedAI: result.method === "ai",
+        aiCost: result.aiCost
+      }
+    });
+    logger18.info("SIG parsed successfully", {
+      method: result.method,
+      confidence: result.confidence,
+      warningsCount: result.warnings.length,
+      executionTime
+    });
+  } catch (error) {
+    const executionTime = Date.now() - startTime;
+    logger18.error("SIG parsing failed", error, {
+      executionTime
+    });
+    res.status(500).json({
+      success: false,
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "An unexpected error occurred while parsing the SIG",
+        details: { executionTime }
+      }
+    });
+  }
+}
+
 // src/api/v1/analytics.ts
 var admin = __toESM(require("firebase-admin"), 1);
 init_src2();
 init_src2();
-var logger17 = createLogger({ service: "AnalyticsEndpoint" });
+var logger19 = createLogger({ service: "AnalyticsEndpoint" });
 async function getSystemAnalytics(req, res) {
   const startTime = Date.now();
   try {
@@ -51878,7 +52568,7 @@ async function getSystemAnalytics(req, res) {
       }
     });
   } catch (error) {
-    logger17.error("Failed to get system analytics", error, {
+    logger19.error("Failed to get system analytics", error, {
       userId: req.user?.uid
     });
     res.status(500).json({
@@ -51914,7 +52604,7 @@ async function getUserActivityStats(db) {
       topUsers
     };
   } catch (error) {
-    logger17.error("Failed to get user activity stats", error);
+    logger19.error("Failed to get user activity stats", error);
     return {
       totalUsers: 0,
       activeUsers: 0,
@@ -51950,7 +52640,7 @@ async function getCachePerformance(db, startDate) {
       averageLatency
     };
   } catch (error) {
-    logger17.error("Failed to get cache performance", error);
+    logger19.error("Failed to get cache performance", error);
     return {
       totalRequests: 0,
       cacheHits: 0,
@@ -52010,7 +52700,7 @@ async function getUserAnalytics(req, res) {
       }
     });
   } catch (error) {
-    logger17.error("Failed to get user analytics", error, {
+    logger19.error("Failed to get user analytics", error, {
       userId: req.user?.uid,
       requestedUserId: req.params.userId
     });
@@ -52066,7 +52756,7 @@ async function getAPIHealthMetrics(req, res) {
       }
     });
   } catch (error) {
-    logger17.error("Failed to get API health metrics", error);
+    logger19.error("Failed to get API health metrics", error);
     res.status(500).json({
       success: false,
       error: {
@@ -52080,20 +52770,20 @@ async function getAPIHealthMetrics(req, res) {
 // src/api/v1/middlewares/validate.ts
 init_zod();
 init_src2();
-var logger18 = createLogger({ service: "ValidationMiddleware" });
-function validateRequest(schema) {
+var logger20 = createLogger({ service: "ValidationMiddleware" });
+function validateRequest2(schema) {
   return async (req, res, next) => {
     try {
       const validated = await schema.parseAsync(req.body);
       req.body = validated;
-      logger18.debug("Request validation successful", {
+      logger20.debug("Request validation successful", {
         path: req.path,
         method: req.method
       });
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        logger18.warn("Request validation failed", {
+        logger20.warn("Request validation failed", {
           path: req.path,
           method: req.method,
           errors: error.errors
@@ -52112,7 +52802,7 @@ function validateRequest(schema) {
         });
         return;
       }
-      logger18.error("Unexpected validation error", error, {
+      logger20.error("Unexpected validation error", error, {
         path: req.path,
         method: req.method
       });
@@ -52129,9 +52819,9 @@ function validateRequest(schema) {
 
 // src/api/v1/middlewares/error.ts
 init_src2();
-var logger19 = createLogger({ service: "error-middleware" });
+var logger21 = createLogger({ service: "error-middleware" });
 function errorHandler(err, req, res, _next) {
-  logger19.error("Request error", err, {
+  logger21.error("Request error", err, {
     path: req.path,
     method: req.method
   });
@@ -52187,7 +52877,7 @@ var admin3 = __toESM(require("firebase-admin"), 1);
 // src/api/v1/middlewares/auth.ts
 var admin2 = __toESM(require("firebase-admin"), 1);
 init_src2();
-var logger20 = createLogger({ service: "AuthMiddleware" });
+var logger22 = createLogger({ service: "AuthMiddleware" });
 async function verifyToken(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -52209,7 +52899,7 @@ async function verifyToken(req, res, next) {
       role,
       emailVerified: decodedToken.email_verified
     };
-    logger20.debug("User authenticated", {
+    logger22.debug("User authenticated", {
       uid: req.user.uid,
       email: req.user.email,
       role: req.user.role
@@ -52217,7 +52907,7 @@ async function verifyToken(req, res, next) {
     next();
   } catch (error) {
     if (error.code === "auth/id-token-expired") {
-      logger20.warn("Expired token", { error });
+      logger22.warn("Expired token", { error });
       res.status(401).json({
         success: false,
         error: {
@@ -52228,7 +52918,7 @@ async function verifyToken(req, res, next) {
       return;
     }
     if (error.code === "auth/argument-error") {
-      logger20.warn("Invalid token format", { error });
+      logger22.warn("Invalid token format", { error });
       res.status(401).json({
         success: false,
         error: {
@@ -52239,7 +52929,7 @@ async function verifyToken(req, res, next) {
       return;
     }
     if (error instanceof AppError) {
-      logger20.warn("Authentication failed", { error });
+      logger22.warn("Authentication failed", { error });
       res.status(error.statusCode).json({
         success: false,
         error: {
@@ -52249,7 +52939,7 @@ async function verifyToken(req, res, next) {
       });
       return;
     }
-    logger20.error("Authentication error", error);
+    logger22.error("Authentication error", error);
     res.status(500).json({
       success: false,
       error: {
@@ -52270,7 +52960,7 @@ function checkRole(allowedRoles) {
         );
       }
       if (!req.user.role) {
-        logger20.warn("User has no role assigned", { uid: req.user.uid });
+        logger22.warn("User has no role assigned", { uid: req.user.uid });
         res.status(403).json({
           success: false,
           error: {
@@ -52281,7 +52971,7 @@ function checkRole(allowedRoles) {
         return;
       }
       if (!allowedRoles.includes(req.user.role)) {
-        logger20.warn("Insufficient permissions", {
+        logger22.warn("Insufficient permissions", {
           uid: req.user.uid,
           userRole: req.user.role,
           requiredRoles: allowedRoles
@@ -52299,7 +52989,7 @@ function checkRole(allowedRoles) {
         });
         return;
       }
-      logger20.debug("Role check passed", {
+      logger22.debug("Role check passed", {
         uid: req.user.uid,
         role: req.user.role
       });
@@ -52315,7 +53005,7 @@ function checkRole(allowedRoles) {
         });
         return;
       }
-      logger20.error("Role check error", error);
+      logger22.error("Role check error", error);
       res.status(500).json({
         success: false,
         error: {
@@ -52330,7 +53020,7 @@ async function optionalAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      logger20.debug("No auth token provided, continuing as anonymous");
+      logger22.debug("No auth token provided, continuing as anonymous");
       next();
       return;
     }
@@ -52344,13 +53034,13 @@ async function optionalAuth(req, res, next) {
       role: userData?.role,
       emailVerified: decodedToken.email_verified
     };
-    logger20.debug("Optional auth - user authenticated", {
+    logger22.debug("Optional auth - user authenticated", {
       uid: req.user.uid,
       role: req.user.role
     });
     next();
   } catch (error) {
-    logger20.warn("Optional auth - invalid token, continuing as anonymous", {
+    logger22.warn("Optional auth - invalid token, continuing as anonymous", {
       error
     });
     next();
@@ -52358,7 +53048,7 @@ async function optionalAuth(req, res, next) {
 }
 
 // src/api/v1/middlewares/rateLimit.ts
-var logger21 = createLogger({ service: "rate-limit-middleware" });
+var logger23 = createLogger({ service: "rate-limit-middleware" });
 var RATE_LIMITS = {
   ["admin" /* ADMIN */]: Number.MAX_SAFE_INTEGER,
   // Unlimited
@@ -52436,7 +53126,7 @@ async function checkUserRateLimit(userId, role) {
     });
     return result;
   } catch (error) {
-    logger21.error("Error checking rate limit", error, { userId, role });
+    logger23.error("Error checking rate limit", error, { userId, role });
     return {
       allowed: true,
       remaining: RATE_LIMITS[role],
@@ -52480,12 +53170,12 @@ async function rateLimitMiddleware(req, res, next) {
       const role = req.user.role || "pharmacy_technician" /* PHARMACY_TECHNICIAN */;
       limit2 = RATE_LIMITS[role];
       if (role === "admin" /* ADMIN */) {
-        logger21.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
+        logger23.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
         next();
         return;
       }
       result = await checkUserRateLimit(req.user.uid, role);
-      logger21.debug("User rate limit check", {
+      logger23.debug("User rate limit check", {
         uid: req.user.uid,
         role,
         allowed: result.allowed,
@@ -52495,7 +53185,7 @@ async function rateLimitMiddleware(req, res, next) {
       identifier = req.ip || "unknown";
       limit2 = RATE_LIMITS.anonymous;
       result = checkAnonymousRateLimit(identifier);
-      logger21.debug("Anonymous rate limit check", {
+      logger23.debug("Anonymous rate limit check", {
         ip: identifier,
         allowed: result.allowed,
         remaining: result.remaining
@@ -52505,7 +53195,7 @@ async function rateLimitMiddleware(req, res, next) {
     res.setHeader("X-RateLimit-Remaining", result.remaining.toString());
     res.setHeader("X-RateLimit-Reset", result.resetAt.toISOString());
     if (!result.allowed) {
-      logger21.warn("Rate limit exceeded", {
+      logger23.warn("Rate limit exceeded", {
         identifier,
         retryAfter: result.retryAfter,
         authenticated: !!req.user
@@ -52529,14 +53219,14 @@ async function rateLimitMiddleware(req, res, next) {
     }
     next();
   } catch (error) {
-    logger21.error("Rate limit middleware error", error);
+    logger23.error("Rate limit middleware error", error);
     next();
   }
 }
 
 // src/api/v1/middlewares/redact.ts
 init_src2();
-var logger22 = createLogger({ service: "redaction-middleware" });
+var logger24 = createLogger({ service: "redaction-middleware" });
 function redactionMiddleware(req, res, next) {
   const context = sanitizeLogContext({
     method: req.method,
@@ -52544,7 +53234,7 @@ function redactionMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.get("user-agent")
   });
-  logger22.info("Request received", context);
+  logger24.info("Request received", context);
   const startTime = Date.now();
   res.on("finish", () => {
     const executionTime = Date.now() - startTime;
@@ -52554,14 +53244,14 @@ function redactionMiddleware(req, res, next) {
       statusCode: res.statusCode,
       executionTime
     });
-    logger22.info("Request completed", responseContext);
+    logger24.info("Request completed", responseContext);
   });
   next();
 }
 
 // src/api/v1/middlewares/logging.ts
 init_src2();
-var logger23 = createLogger({ service: "request-logger" });
+var logger25 = createLogger({ service: "request-logger" });
 function getCorrelationId(req) {
   const existingId = req.headers["x-correlation-id"] || req.headers["x-request-id"] || req.headers["x-trace-id"];
   if (existingId && typeof existingId === "string") {
@@ -52624,7 +53314,7 @@ function loggingMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.headers["user-agent"]
   };
-  logger23.info("Incoming request", {
+  logger25.info("Incoming request", {
     ...logContext,
     body: redactRequestBody(req.body),
     query: req.query
@@ -52632,7 +53322,7 @@ function loggingMiddleware(req, res, next) {
   const originalJson = res.json.bind(res);
   res.json = function(body) {
     const executionTime = Date.now() - startTime;
-    logger23.info("Outgoing response", {
+    logger25.info("Outgoing response", {
       ...logContext,
       statusCode: res.statusCode,
       executionTime,
@@ -52646,7 +53336,7 @@ function loggingMiddleware(req, res, next) {
       return;
     }
     const executionTime = Date.now() - startTime;
-    logger23.info("Request completed", {
+    logger25.info("Request completed", {
       ...logContext,
       statusCode: res.statusCode,
       executionTime
@@ -52656,7 +53346,7 @@ function loggingMiddleware(req, res, next) {
   next = function(err) {
     if (err) {
       const executionTime = Date.now() - startTime;
-      logger23.error("Request error", err, {
+      logger25.error("Request error", err, {
         ...logContext,
         executionTime,
         errorName: err?.name,
@@ -52671,16 +53361,19 @@ function loggingMiddleware(req, res, next) {
 // src/index.ts
 init_src();
 init_src2();
-var logger24 = createLogger({ service: "functions-main" });
+var logger26 = createLogger({ service: "functions-main" });
 if (!admin4.apps.length) {
   admin4.initializeApp();
-  logger24.info("Firebase Admin SDK initialized");
+  logger26.info("Firebase Admin SDK initialized");
 }
 var app = (0, import_express.default)();
 var corsOptions = {
   origin: (origin2, callback) => {
     const allowedOrigins = getCorsOrigins();
     if (!origin2) {
+      return callback(null, true);
+    }
+    if (origin2.startsWith("http://localhost:") || origin2.startsWith("http://127.0.0.1:")) {
       return callback(null, true);
     }
     if (allowedOrigins.includes(origin2)) {
@@ -52708,12 +53401,19 @@ app.post(
   asyncHandler(searchHandler)
 );
 app.post(
+  "/v1/sig/parse",
+  asyncHandler(optionalAuth),
+  // Optional auth
+  asyncHandler(rateLimitMiddleware),
+  asyncHandler(parseSigHandler)
+);
+app.post(
   "/v1/calculate",
   asyncHandler(optionalAuth),
   // Optional auth - allows both authenticated and anonymous users
   asyncHandler(rateLimitMiddleware),
   // Rate limiting based on auth status
-  validateRequest(CalculateRequestSchema),
+  validateRequest2(CalculateRequestSchema),
   asyncHandler(calculateHandler)
 );
 app.post(
@@ -52721,7 +53421,7 @@ app.post(
   asyncHandler(verifyToken),
   // Requires authentication
   asyncHandler(rateLimitMiddleware),
-  validateRequest(AlternativesRequestSchema),
+  validateRequest2(AlternativesRequestSchema),
   asyncHandler(alternativesHandler)
 );
 app.get(
@@ -52746,7 +53446,7 @@ var api = functions.region("us-central1").runWith({
   memory: "512MB",
   timeoutSeconds: 60
 }).https.onRequest(app);
-logger24.info("NDC Calculator functions initialized with authentication");
+logger26.info("NDC Calculator functions initialized with authentication");
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   api
