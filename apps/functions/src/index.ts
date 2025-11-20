@@ -12,6 +12,7 @@ import helmet from 'helmet';
 import { CalculateRequestSchema, AlternativesRequestSchema } from '@api-contracts';
 import { healthCheck } from './api/v1/health';
 import { calculateHandler } from './api/v1/calculate';
+import { searchHandler } from './api/v1/search';
 import { alternativesHandler } from './api/v1/alternatives';
 import {
   getSystemAnalytics,
@@ -73,6 +74,14 @@ app.use(redactionMiddleware);
 
 // Public Routes (no authentication required)
 app.get('/v1/health', asyncHandler(healthCheck));
+
+// Search endpoint (optional authentication)
+app.post(
+  '/v1/search',
+  asyncHandler(optionalAuth), // Optional auth - allows both authenticated and anonymous users
+  asyncHandler(rateLimitMiddleware), // Rate limiting based on auth status
+  asyncHandler(searchHandler)
+);
 
 // Protected Routes (authentication required)
 // Note: For MVP, we're making /v1/calculate require authentication

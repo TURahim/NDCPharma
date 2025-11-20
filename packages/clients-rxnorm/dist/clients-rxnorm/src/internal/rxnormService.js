@@ -173,6 +173,26 @@ class RxNormService {
         }
     }
     /**
+     * Get all related information for an RxCUI
+     * GET /rxcui/{rxcui}/allrelated.json?tty={tty}
+     */
+    async getAllRelatedInfo(rxcui, termTypes) {
+        const startTime = Date.now();
+        try {
+            const params = {};
+            if (termTypes && termTypes.length > 0) {
+                params.tty = termTypes.join("+");
+            }
+            const response = await this.executeWithRetry(`/rxcui/${rxcui}/allrelated.json`, params);
+            const executionTime = Date.now() - startTime;
+            this.logger.logExternalAPICall("RxNorm", `/rxcui/${rxcui}/allrelated`, "GET", 200, executionTime);
+            return response;
+        }
+        catch (error) {
+            throw this.handleError(error, "getAllRelatedInfo");
+        }
+    }
+    /**
      * Execute API request with retry logic
      */
     async executeWithRetry(endpoint, params) {

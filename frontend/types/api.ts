@@ -3,6 +3,42 @@
  * Matches backend API contracts
  */
 
+export interface ActiveIngredient {
+  name: string;
+  strength: string;
+}
+
+export interface PackageSizeDetails {
+  quantity: number;
+  unit: string;
+  display: string;
+}
+
+export interface MarketingStatus {
+  isActive: boolean;
+  status: string;
+  label?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface NDCPackage {
+  ndc: string;
+  productNdc: string;
+  brandName?: string;
+  genericName?: string;
+  strength?: string;
+  dosageForm?: string;
+  dosageFormFamily?: string;
+  route?: string[];
+  packageSize?: PackageSizeDetails;
+  labeler?: string;
+  manufacturer?: string;
+  activeIngredients?: ActiveIngredient[];
+  marketingStatus?: MarketingStatus;
+  listingExpirationDate?: string;
+}
+
 export interface CalculateRequest {
   drug: {
     name?: string;

@@ -114,3 +114,11 @@ export declare function getNdcsForRxcui(rxcui: string, opts?: FetchOptions): Pro
  * @deprecated Use getNdcsForRxcui() for simpler NDC list retrieval
  */
 export declare function rxcuiToNdcs(rxcui: string, opts?: FetchOptions): Promise<NdcInfo[]>;
+/**
+ * Get alternative drugs for a given RxCUI
+ * Finds related drugs in the same therapeutic class or with the same ingredient
+ *
+ * @param rxcui - RxNorm Concept Unique Identifier
+ * @returns Array of related drugs
+ */
+export declare function getAlternativeDrugs(rxcui: string): Promise<import("./internal/alternativeFinder").RelatedDrug[]>;

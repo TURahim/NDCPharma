@@ -27271,7 +27271,10 @@ var init_environment = __esm({
       LOG_LEVEL: external_exports.enum(["debug", "info", "warn", "error", "critical"]).default("info"),
       ENABLE_REQUEST_LOGGING: external_exports.string().transform((val) => val === "true").default("true"),
       // Security
-      CORS_ALLOWED_ORIGINS: external_exports.string().default("http://localhost:3000,https://ndc-pharma-functions-kr3j.vercel.app"),
+      // Include common local dev ports (3000, 3001) plus production frontend host.
+      CORS_ALLOWED_ORIGINS: external_exports.string().default(
+        "http://localhost:3000,http://localhost:3001,https://ndc-pharma-functions-kr3j.vercel.app"
+      ),
       JWT_EXPIRATION_HOURS: external_exports.string().transform(Number).pipe(external_exports.number().positive()).default("24"),
       // Feature Flags
       ENABLE_AI_MATCHING: external_exports.string().transform((val) => val === "true").default("true"),
@@ -40975,7 +40978,7 @@ function mapFDAResultToNDCPackage(fdaResult) {
         route: fdaResult.route || [],
         packageSize: parsePackageSize(packaging.description),
         activeIngredients: mapActiveIngredients(fdaResult.active_ingredients),
-        marketingStatus: parseMarketingStatus(packaging),
+        marketingStatus: parseMarketingStatus(packaging, fdaResult.marketing_status),
         labeler: fdaResult.labeler_name,
         rxcui: extractRxCUI(fdaResult.openfda),
         listingExpirationDate: parseFDADate(fdaResult.listing_expiration_date)
@@ -41012,7 +41015,7 @@ function mapFDAResultToNDCDetails(fdaResult) {
       route: fdaResult.route || [],
       packageSize: parsePackageSize(primaryPackaging.description),
       activeIngredients: mapActiveIngredients(fdaResult.active_ingredients),
-      marketingStatus: parseMarketingStatus(primaryPackaging),
+      marketingStatus: parseMarketingStatus(primaryPackaging, fdaResult.marketing_status),
       labeler: fdaResult.labeler_name,
       rxcui: extractRxCUI(fdaResult.openfda),
       listingExpirationDate: parseFDADate(fdaResult.listing_expiration_date),
@@ -41122,22 +41125,29 @@ function mapActiveIngredients(ingredients) {
     strength: ing.strength
   }));
 }
-function parseMarketingStatus(packaging) {
+function parseMarketingStatus(packaging, productStatus) {
   const hasStartDate = !!packaging.marketing_start_date;
   const hasEndDate = !!packaging.marketing_end_date;
   const startDate = parseFDADate(packaging.marketing_start_date);
   const endDate = parseFDADate(packaging.marketing_end_date);
-  let status;
-  let isActive;
+  let status = "unknown";
+  let isActive = true;
+  const normalizedProductStatus = productStatus?.toLowerCase();
   if (hasEndDate) {
     status = "discontinued";
     isActive = false;
-  } else if (hasStartDate) {
+  } else if (normalizedProductStatus?.includes("discontinued")) {
+    status = "discontinued";
+    isActive = false;
+  } else if (normalizedProductStatus?.includes("withdrawn") || normalizedProductStatus?.includes("expired")) {
+    status = "expired";
+    isActive = false;
+  } else if (hasStartDate || normalizedProductStatus?.includes("active")) {
     status = "active";
     isActive = true;
   } else {
-    status = "unknown";
-    isActive = false;
+    status = "active";
+    isActive = true;
   }
   return {
     isActive,
@@ -51089,9 +51099,626 @@ async function calculateHandler(req, res) {
   }
 }
 
+// src/api/v1/search.ts
+init_src2();
+
+// src/services/drug-search/searchService.ts
+init_src2();
+
+// src/services/drug-search/inputParser.ts
+init_src2();
+var logger9 = createLogger({ service: "DrugSearch.InputParser" });
+var STRENGTH_UNITS = [
+  "mg",
+  "mcg",
+  "g",
+  "gram",
+  "grams",
+  "kg",
+  "ml",
+  "l",
+  "units",
+  "iu",
+  "%",
+  "mEq".toLowerCase()
+];
+var DOSAGE_FORM_KEYWORDS = [
+  "tablet",
+  "tab",
+  "capsule",
+  "cap",
+  "suspension",
+  "solution",
+  "injectable",
+  "injection",
+  "cream",
+  "ointment",
+  "gel",
+  "patch",
+  "syrup",
+  "elixir",
+  "drop",
+  "oral",
+  "topical",
+  "er",
+  "xr",
+  "sr",
+  "dr",
+  "odt",
+  "chewable",
+  "extended-release",
+  "delayed-release"
+];
+var RELEASE_TYPE_KEYWORDS = ["er", "xr", "sr", "dr", "cr", "xl", "odt"];
+var strengthRegex = new RegExp(
+  `(\\d+(?:\\.\\d+)?)\\s?(?:${STRENGTH_UNITS.join("|")})`,
+  "gi"
+);
+function normalizeQuery(query) {
+  return query.trim().replace(/\s+/g, " ").replace(/\s*[,\\/]\s*/g, " ").toLowerCase();
+}
+function extractTokens(normalized, keywords) {
+  const tokens = [];
+  let remainder = normalized;
+  keywords.forEach((keyword) => {
+    const keywordRegex = new RegExp(`\\b${keyword}\\b`, "gi");
+    if (keywordRegex.test(remainder)) {
+      tokens.push(keyword);
+      remainder = remainder.replace(keywordRegex, "").trim();
+    }
+  });
+  return { tokens, remainder };
+}
+function parseDrugQuery(drugName, explicitStrength) {
+  const normalized = normalizeQuery(drugName);
+  const strengthTokens = [];
+  let working = normalized;
+  const matches = working.match(strengthRegex);
+  if (matches) {
+    strengthTokens.push(...matches.map((match) => match.trim()));
+    working = working.replace(strengthRegex, "").trim();
+  }
+  if (explicitStrength) {
+    strengthTokens.push(explicitStrength.toLowerCase());
+  }
+  const dosageExtraction = extractTokens(working, DOSAGE_FORM_KEYWORDS);
+  working = dosageExtraction.remainder;
+  const releaseExtraction = extractTokens(working, RELEASE_TYPE_KEYWORDS);
+  working = releaseExtraction.remainder;
+  const baseName = working.replace(/\s+/g, " ").replace(/[^a-z0-9\s]/gi, "").trim();
+  const parsed = {
+    originalQuery: drugName,
+    baseName: baseName || drugName.trim(),
+    strengthTokens: Array.from(new Set(strengthTokens.map((s2) => s2.toLowerCase()))),
+    dosageFormTokens: Array.from(new Set(dosageExtraction.tokens)),
+    releaseTypeTokens: Array.from(new Set(releaseExtraction.tokens))
+  };
+  logger9.debug("Parsed drug query", parsed);
+  return parsed;
+}
+
+// src/services/drug-search/rxnormResolver.ts
+init_src2();
+
+// src/services/drug-search/errors.ts
+var STATUS_MAP = {
+  DRUG_NOT_FOUND: 404,
+  RXNORM_LOOKUP_FAILED: 502,
+  FDA_LOOKUP_FAILED: 502,
+  NO_ACTIVE_PACKAGES: 404,
+  ONLY_INACTIVE_PACKAGES: 404,
+  NO_MATCHING_STRENGTH: 404,
+  NO_MATCHING_DOSAGE_FORM: 404,
+  NO_PACKAGES_FOUND: 404
+};
+var DrugSearchError = class extends Error {
+  constructor(code, message, details, statusCode = STATUS_MAP[code] ?? 500) {
+    super(message);
+    this.code = code;
+    this.details = details;
+    this.statusCode = statusCode;
+    this.name = "DrugSearchError";
+  }
+};
+function createSearchError(code, message, details) {
+  return new DrugSearchError(code, message, details);
+}
+
+// src/services/drug-search/rxnormResolver.ts
+var logger10 = createLogger({ service: "DrugSearch.RxNormResolver" });
+async function fallbackToFdaGeneric(baseName) {
+  try {
+    const packages = await fdaClient.searchByGenericName(baseName, { limit: 1 });
+    if (!packages.length) {
+      return null;
+    }
+    const pkg = packages[0];
+    return {
+      rxcui: pkg.rxcui || "fda-generic",
+      name: pkg.genericName,
+      ingredientName: pkg.genericName,
+      clinicalName: pkg.genericName,
+      confidence: 0.4,
+      resolvedStrengths: Array.from(
+        new Set(
+          pkg.activeIngredients?.map((ingredient) => ingredient.strength).filter(Boolean)
+        )
+      ),
+      resolvedDosageForms: pkg.dosageForm ? [pkg.dosageForm] : [],
+      source: "fda_generic",
+      warnings: ["Resolved via FDA generic lookup"]
+    };
+  } catch (error) {
+    logger10.warn("FDA generic fallback failed", error, { baseName });
+    return null;
+  }
+}
+function mapRxNormResult(result) {
+  return {
+    rxcui: result.rxcui,
+    name: result.name,
+    ingredientName: result.name,
+    clinicalName: result.name,
+    confidence: result.confidence ?? 0.8,
+    resolvedStrengths: result.strength ? [result.strength] : [],
+    resolvedDosageForms: result.dosageForm ? [result.dosageForm] : [],
+    source: "rxnorm",
+    warnings: []
+  };
+}
+async function resolveDrugConcept(parsedQuery, options = {}) {
+  const { baseName, originalQuery } = parsedQuery;
+  if (!baseName && !options.rxcui) {
+    throw createSearchError("DRUG_NOT_FOUND", "No drug name or RxCUI provided for search.");
+  }
+  if (options.rxcui) {
+    try {
+      const resolved = await nameToRxCui(originalQuery || baseName);
+      logger10.info("Resolved drug via direct RxCUI path", { rxcui: resolved.rxcui });
+      return mapRxNormResult(resolved);
+    } catch (error) {
+      logger10.warn("Direct RxCUI resolution failed, falling back to name search", {
+        rxcui: options.rxcui,
+        error
+      });
+    }
+  }
+  try {
+    const normalized = await nameToRxCui(baseName);
+    logger10.info("RxNorm normalization succeeded", { rxcui: normalized.rxcui });
+    return mapRxNormResult(normalized);
+  } catch (error) {
+    logger10.warn("RxNorm normalization failed", error, { baseName });
+  }
+  const fdaFallback = await fallbackToFdaGeneric(baseName);
+  if (fdaFallback) {
+    return fdaFallback;
+  }
+  throw createSearchError(
+    "RXNORM_LOOKUP_FAILED",
+    "Unable to resolve drug concept from RxNorm or FDA generic search.",
+    { baseName }
+  );
+}
+
+// src/services/drug-search/fdaPackageService.ts
+init_src2();
+var logger11 = createLogger({ service: "DrugSearch.FDAService" });
+var PAGE_SIZE = 100;
+var MAX_PAGES = 20;
+function splitByMarketingStatus(packages) {
+  const active = [];
+  const inactive = [];
+  packages.forEach((pkg) => {
+    if (pkg.marketingStatus?.isActive) {
+      active.push(pkg);
+    } else {
+      inactive.push(pkg);
+    }
+  });
+  return { active, inactive };
+}
+function collectMetadata(packages) {
+  const strengths = /* @__PURE__ */ new Set();
+  const forms = /* @__PURE__ */ new Set();
+  packages.forEach((pkg) => {
+    pkg.activeIngredients?.forEach((ingredient) => {
+      if (ingredient.strength) {
+        strengths.add(ingredient.strength);
+      }
+    });
+    if (pkg.dosageForm) {
+      forms.add(pkg.dosageForm);
+    }
+  });
+  return {
+    strengths: Array.from(strengths).sort(),
+    forms: Array.from(forms).sort()
+  };
+}
+async function fetchFdaPackagesForRxcui(rxcui, genericName) {
+  logger11.info("Fetching FDA packages", { rxcui, genericName });
+  let allPackages = [];
+  let usedFallback = false;
+  try {
+    let page = 0;
+    while (page < MAX_PAGES) {
+      const skip = page * PAGE_SIZE;
+      const chunk = await fdaClient.getNDCsByRxCUI(rxcui, {
+        limit: PAGE_SIZE,
+        skip,
+        activeOnly: false
+      });
+      if (!chunk.length) {
+        break;
+      }
+      allPackages.push(...chunk);
+      page += 1;
+      if (chunk.length < PAGE_SIZE) {
+        break;
+      }
+    }
+    logger11.info("FDA packages retrieved via RxCUI", {
+      rxcui,
+      totalPackages: allPackages.length,
+      pagesFetched: page
+    });
+  } catch (error) {
+    if (error?.status === 404 && genericName) {
+      logger11.warn("RxCUI search failed, attempting generic name fallback", {
+        rxcui,
+        genericName,
+        error: error.message
+      });
+      try {
+        let page = 0;
+        while (page < MAX_PAGES) {
+          const skip = page * PAGE_SIZE;
+          const chunk = await fdaClient.searchByGenericName(genericName, {
+            limit: PAGE_SIZE,
+            skip,
+            activeOnly: false
+          });
+          if (!chunk.length) {
+            break;
+          }
+          allPackages.push(...chunk);
+          page += 1;
+          if (chunk.length < PAGE_SIZE) {
+            break;
+          }
+        }
+        usedFallback = true;
+        logger11.info("FDA packages retrieved via generic name fallback", {
+          genericName,
+          totalPackages: allPackages.length,
+          pagesFetched: page
+        });
+      } catch (fallbackError) {
+        logger11.error("Generic name fallback also failed", fallbackError, {
+          genericName,
+          rxcui
+        });
+        throw createSearchError(
+          "FDA_LOOKUP_FAILED",
+          `FDA did not return any packages for "${genericName}". The drug may not be available in the FDA database.`,
+          { rxcui, genericName, originalError: error.message }
+        );
+      }
+    } else {
+      logger11.error("FDA lookup failed without fallback", error, { rxcui });
+      throw createSearchError(
+        "FDA_LOOKUP_FAILED",
+        "Unable to retrieve packages from FDA NDC Directory.",
+        { rxcui, error: error.message }
+      );
+    }
+  }
+  if (!allPackages.length) {
+    throw createSearchError(
+      "NO_PACKAGES_FOUND",
+      "No packages found in FDA NDC Directory for this drug.",
+      { rxcui, genericName, usedFallback }
+    );
+  }
+  const { active, inactive } = splitByMarketingStatus(allPackages);
+  const metadata = collectMetadata(allPackages);
+  return {
+    packages: allPackages,
+    activePackages: active,
+    inactivePackages: inactive,
+    totalActive: active.length,
+    totalInactive: inactive.length,
+    uniqueStrengths: metadata.strengths,
+    uniqueForms: metadata.forms
+  };
+}
+
+// src/services/drug-search/packageNormalizer.ts
+init_src2();
+var logger12 = createLogger({ service: "DrugSearch.PackageNormalizer" });
+function toTitleCase(value) {
+  if (!value) return "";
+  return value.toLowerCase().split(" ").filter(Boolean).map((word) => word.charAt(0).toUpperCase() + word.slice(1)).join(" ");
+}
+function formatNdc(ndc) {
+  const digits = ndc.replace(/-/g, "");
+  if (digits.length !== 11) {
+    return ndc;
+  }
+  return `${digits.slice(0, 5)}-${digits.slice(5, 9)}-${digits.slice(9)}`;
+}
+function buildStrength(pkg) {
+  if (!pkg.activeIngredients || !pkg.activeIngredients.length) {
+    return "Not Specified";
+  }
+  return pkg.activeIngredients.map((ingredient) => {
+    const strength = ingredient.strength || "";
+    return strength.trim();
+  }).filter(Boolean).join(" / ");
+}
+function buildPackageSizeDisplay(pkg) {
+  const quantity = pkg.packageSize?.quantity;
+  const unit = pkg.packageSize?.unit;
+  if (!quantity || !unit) {
+    return pkg.packageSize?.description || "Not Specified";
+  }
+  return `${quantity} ${toTitleCase(unit)}`;
+}
+function normalizeRoute(route) {
+  if (!route || !route.length) return [];
+  return route.map((entry) => toTitleCase(entry));
+}
+function normalizeMarketingStatus(pkg) {
+  if (pkg.marketingStatus?.isActive) {
+    return { status: "active", label: "Active" };
+  }
+  const description = pkg.marketingStatus?.status || "Inactive";
+  return { status: "inactive", label: toTitleCase(description) || "Inactive" };
+}
+function normalizePackages(packages) {
+  const normalized = packages.map((pkg) => {
+    const marketing = normalizeMarketingStatus(pkg);
+    const normalizedPkg = {
+      ndc: pkg.ndc,
+      formattedNdc: formatNdc(pkg.ndc),
+      productNdc: pkg.productNdc,
+      brandName: toTitleCase(pkg.brandName) || "\u2014",
+      genericName: toTitleCase(pkg.genericName) || "Not Specified",
+      strength: buildStrength(pkg),
+      dosageForm: toTitleCase(pkg.dosageForm) || "Not Specified",
+      dosageFormFamily: normalizeDosageForm2(pkg.dosageForm || ""),
+      route: normalizeRoute(pkg.route),
+      packageSize: {
+        quantity: pkg.packageSize?.quantity || 0,
+        unit: pkg.packageSize?.unit || "",
+        display: buildPackageSizeDisplay(pkg)
+      },
+      manufacturer: toTitleCase(pkg.labeler) || "Not Specified",
+      marketingStatus: marketing.status,
+      marketingStatusLabel: marketing.label,
+      raw: pkg
+    };
+    return normalizedPkg;
+  });
+  logger12.debug("Normalized packages", { total: normalized.length });
+  return normalized;
+}
+
+// src/services/drug-search/packageFilter.ts
+init_src2();
+var logger13 = createLogger({ service: "DrugSearch.PackageFilter" });
+function normalizeStrengthValue(value) {
+  return value.toLowerCase().replace(/[\s-]/g, "");
+}
+function packageMatchesStrength(pkg, strength) {
+  if (!strength) return true;
+  const normalizedFilter = normalizeStrengthValue(strength);
+  const normalizedPackageStrength = normalizeStrengthValue(pkg.strength);
+  return normalizedPackageStrength.includes(normalizedFilter) || normalizedFilter.includes(normalizedPackageStrength);
+}
+function packageMatchesDosageForm(pkg, keywords) {
+  if (!keywords.length) return true;
+  const dosageForm = pkg.dosageForm.toLowerCase();
+  return keywords.some((keyword) => dosageForm.includes(keyword.toLowerCase()));
+}
+function filterPackages(packages, options) {
+  let filtered = packages;
+  if (options.strength) {
+    filtered = filtered.filter((pkg) => packageMatchesStrength(pkg, options.strength));
+    if (!filtered.length) {
+      logger13.warn("No packages match provided strength", { strength: options.strength });
+      return { filtered, reason: "NO_MATCHING_STRENGTH" };
+    }
+  }
+  if (options.dosageFormKeywords && options.dosageFormKeywords.length) {
+    filtered = filtered.filter(
+      (pkg) => packageMatchesDosageForm(pkg, options.dosageFormKeywords || [])
+    );
+    if (!filtered.length) {
+      logger13.warn("No packages match provided dosage form keywords", {
+        dosageForms: options.dosageFormKeywords
+      });
+      return { filtered, reason: "NO_MATCHING_DOSAGE_FORM" };
+    }
+  }
+  return { filtered };
+}
+
+// src/services/drug-search/searchService.ts
+var logger14 = createLogger({ service: "DrugSearch.Service" });
+function mapPackagesForResponse(packages) {
+  return packages.map((pkg) => {
+    const marketingStatus = pkg.raw.marketingStatus ?? {
+      isActive: pkg.marketingStatus === "active",
+      status: pkg.marketingStatus
+    };
+    return {
+      ndc: pkg.formattedNdc,
+      productNdc: pkg.productNdc,
+      brandName: pkg.brandName,
+      genericName: pkg.genericName,
+      strength: pkg.strength || "Not Specified",
+      dosageForm: pkg.dosageForm || "Not Specified",
+      dosageFormFamily: pkg.dosageFormFamily,
+      route: pkg.route,
+      packageSize: pkg.packageSize,
+      labeler: pkg.manufacturer,
+      manufacturer: pkg.manufacturer,
+      activeIngredients: pkg.raw.activeIngredients || [],
+      marketingStatus: {
+        ...marketingStatus,
+        label: pkg.marketingStatusLabel
+      },
+      listingExpirationDate: pkg.raw.listingExpirationDate
+    };
+  });
+}
+function buildFilterOptions(request, parsed) {
+  const dosageKeywords = [];
+  if (request.dosageForm) {
+    dosageKeywords.push(request.dosageForm.toLowerCase());
+  }
+  if (parsed?.dosageFormTokens?.length) {
+    dosageKeywords.push(...parsed.dosageFormTokens);
+  }
+  return {
+    strength: request.strength || parsed?.strengthTokens?.[0],
+    dosageFormKeywords: dosageKeywords
+  };
+}
+async function performDrugSearch(request, context) {
+  const { drugName, rxcui } = request;
+  if (!drugName && !rxcui) {
+    throw createSearchError("DRUG_NOT_FOUND", "Either drugName or rxcui must be provided.");
+  }
+  const parsedQuery = drugName ? parseDrugQuery(drugName, request.strength) : null;
+  const concept = await resolveDrugConcept(parsedQuery || {}, {
+    rxcui
+  });
+  const genericNameForFallback = parsedQuery?.baseName || concept.name || drugName;
+  const packagesResult = await fetchFdaPackagesForRxcui(concept.rxcui, genericNameForFallback);
+  if (!packagesResult.packages.length) {
+    throw createSearchError("NO_PACKAGES_FOUND", "No packages found for the specified drug", {
+      rxcui: concept.rxcui
+    });
+  }
+  if (!packagesResult.activePackages.length) {
+    if (packagesResult.inactivePackages.length) {
+      throw createSearchError(
+        "ONLY_INACTIVE_PACKAGES",
+        "Only inactive NDC packages exist for this drug",
+        { rxcui: concept.rxcui }
+      );
+    }
+    throw createSearchError(
+      "NO_ACTIVE_PACKAGES",
+      "No active NDC packages found for this drug",
+      { rxcui: concept.rxcui }
+    );
+  }
+  const normalizedPackages = normalizePackages(packagesResult.activePackages);
+  const filters = buildFilterOptions(request, parsedQuery || {});
+  const { filtered, reason } = filterPackages(normalizedPackages, filters);
+  if (!filtered.length) {
+    if (reason) {
+      throw createSearchError(reason, "No packages matched the provided filters", filters);
+    }
+    throw createSearchError("NO_ACTIVE_PACKAGES", "No packages remain after filtering", filters);
+  }
+  const response = {
+    drug: {
+      rxcui: concept.rxcui,
+      name: concept.name,
+      ingredientName: concept.ingredientName,
+      clinicalDrugName: concept.clinicalName,
+      strengthTokensParsed: parsedQuery?.strengthTokens || [],
+      dosageFormTokensParsed: parsedQuery?.dosageFormTokens || [],
+      resolvedDosageForms: concept.resolvedDosageForms,
+      resolvedStrengths: concept.resolvedStrengths,
+      warnings: concept.warnings
+    },
+    packages: mapPackagesForResponse(filtered),
+    metadata: {
+      totalActivePackages: packagesResult.totalActive,
+      totalInactivePackages: packagesResult.totalInactive,
+      allStrengths: packagesResult.uniqueStrengths,
+      allForms: packagesResult.uniqueForms
+    }
+  };
+  logger14.info("Drug search completed", {
+    requestId: context.requestId,
+    correlationId: context.correlationId,
+    rxcui: concept.rxcui,
+    returnedPackages: response.packages.length
+  });
+  return response;
+}
+
+// src/api/v1/search.ts
+var logger15 = createLogger({ service: "SearchEndpoint" });
+async function searchHandler(req, res) {
+  const startTime = Date.now();
+  const request = req.body;
+  const context = {
+    requestId: req.headers["x-request-id"]?.toString() || `req_${Date.now()}`,
+    correlationId: req.headers["x-correlation-id"]?.toString() || req.id || "search"
+  };
+  try {
+    const result = await performDrugSearch(request, context);
+    const response = {
+      success: true,
+      data: result
+    };
+    logger15.info("Drug search succeeded", {
+      requestId: context.requestId,
+      correlationId: context.correlationId,
+      durationMs: Date.now() - startTime,
+      packagesReturned: result.packages.length
+    });
+    res.status(200).json(response);
+  } catch (error) {
+    if (error instanceof DrugSearchError) {
+      logger15.warn("Drug search failed with known error", {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        durationMs: Date.now() - startTime,
+        request
+      });
+      const response2 = {
+        success: false,
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details
+        }
+      };
+      res.status(error.statusCode).json(response2);
+      return;
+    }
+    const err = error;
+    logger15.error("Drug search failed unexpectedly", err, {
+      durationMs: Date.now() - startTime,
+      request
+    });
+    const response = {
+      success: false,
+      error: {
+        code: "SEARCH_ERROR",
+        message: err.message || "An unexpected error occurred during drug search",
+        details: {
+          stack: err.stack
+        }
+      }
+    };
+    res.status(500).json(response);
+  }
+}
+
 // src/api/v1/alternatives.ts
 init_src2();
-var logger9 = createLogger({ service: "AlternativesEndpoint" });
+var logger16 = createLogger({ service: "AlternativesEndpoint" });
 var fdaClient2 = new FDAClient();
 async function alternativesHandler(req, res) {
   const startTime = Date.now();
@@ -51119,7 +51746,7 @@ async function alternativesHandler(req, res) {
       return;
     }
     const { drug } = validation.data;
-    logger9.info("Finding drug alternatives", {
+    logger16.info("Finding drug alternatives", {
       drugName: drug.name,
       rxcui: drug.rxcui,
       // @ts-expect-error - req.user is added by auth middleware
@@ -51127,7 +51754,7 @@ async function alternativesHandler(req, res) {
     });
     const relatedDrugs = await getAlternativeDrugs(drug.rxcui);
     if (relatedDrugs.length === 0) {
-      logger9.info("No related drugs found in RxNorm", { rxcui: drug.rxcui });
+      logger16.info("No related drugs found in RxNorm", { rxcui: drug.rxcui });
       res.json({
         success: true,
         data: {
@@ -51138,7 +51765,7 @@ async function alternativesHandler(req, res) {
       });
       return;
     }
-    logger9.info(`Found ${relatedDrugs.length} related drugs in RxNorm`, {
+    logger16.info(`Found ${relatedDrugs.length} related drugs in RxNorm`, {
       rxcui: drug.rxcui,
       relatedCount: relatedDrugs.length
     });
@@ -51155,7 +51782,7 @@ async function alternativesHandler(req, res) {
         break;
       }
     }
-    logger9.info(`Found ${fdaApprovedAlternatives.length} FDA-approved alternatives`, {
+    logger16.info(`Found ${fdaApprovedAlternatives.length} FDA-approved alternatives`, {
       rxcui: drug.rxcui,
       fdaApprovedCount: fdaApprovedAlternatives.length
     });
@@ -51183,7 +51810,7 @@ async function alternativesHandler(req, res) {
 ${alt.recommendation}`
     }));
     const executionTime = Date.now() - startTime;
-    logger9.info("Alternatives search completed", {
+    logger16.info("Alternatives search completed", {
       drugName: drug.name,
       rxcui: drug.rxcui,
       alternativeCount: alternatives.length,
@@ -51199,7 +51826,7 @@ ${alt.recommendation}`
     });
   } catch (error) {
     const executionTime = Date.now() - startTime;
-    logger9.error("Alternatives search failed", error, {
+    logger16.error("Alternatives search failed", error, {
       executionTime
     });
     res.status(500).json({
@@ -51219,7 +51846,7 @@ ${alt.recommendation}`
 var admin = __toESM(require("firebase-admin"), 1);
 init_src2();
 init_src2();
-var logger10 = createLogger({ service: "AnalyticsEndpoint" });
+var logger17 = createLogger({ service: "AnalyticsEndpoint" });
 async function getSystemAnalytics(req, res) {
   const startTime = Date.now();
   try {
@@ -51251,7 +51878,7 @@ async function getSystemAnalytics(req, res) {
       }
     });
   } catch (error) {
-    logger10.error("Failed to get system analytics", error, {
+    logger17.error("Failed to get system analytics", error, {
       userId: req.user?.uid
     });
     res.status(500).json({
@@ -51287,7 +51914,7 @@ async function getUserActivityStats(db) {
       topUsers
     };
   } catch (error) {
-    logger10.error("Failed to get user activity stats", error);
+    logger17.error("Failed to get user activity stats", error);
     return {
       totalUsers: 0,
       activeUsers: 0,
@@ -51323,7 +51950,7 @@ async function getCachePerformance(db, startDate) {
       averageLatency
     };
   } catch (error) {
-    logger10.error("Failed to get cache performance", error);
+    logger17.error("Failed to get cache performance", error);
     return {
       totalRequests: 0,
       cacheHits: 0,
@@ -51383,7 +52010,7 @@ async function getUserAnalytics(req, res) {
       }
     });
   } catch (error) {
-    logger10.error("Failed to get user analytics", error, {
+    logger17.error("Failed to get user analytics", error, {
       userId: req.user?.uid,
       requestedUserId: req.params.userId
     });
@@ -51439,7 +52066,7 @@ async function getAPIHealthMetrics(req, res) {
       }
     });
   } catch (error) {
-    logger10.error("Failed to get API health metrics", error);
+    logger17.error("Failed to get API health metrics", error);
     res.status(500).json({
       success: false,
       error: {
@@ -51453,20 +52080,20 @@ async function getAPIHealthMetrics(req, res) {
 // src/api/v1/middlewares/validate.ts
 init_zod();
 init_src2();
-var logger11 = createLogger({ service: "ValidationMiddleware" });
+var logger18 = createLogger({ service: "ValidationMiddleware" });
 function validateRequest(schema) {
   return async (req, res, next) => {
     try {
       const validated = await schema.parseAsync(req.body);
       req.body = validated;
-      logger11.debug("Request validation successful", {
+      logger18.debug("Request validation successful", {
         path: req.path,
         method: req.method
       });
       next();
     } catch (error) {
       if (error instanceof ZodError) {
-        logger11.warn("Request validation failed", {
+        logger18.warn("Request validation failed", {
           path: req.path,
           method: req.method,
           errors: error.errors
@@ -51485,7 +52112,7 @@ function validateRequest(schema) {
         });
         return;
       }
-      logger11.error("Unexpected validation error", error, {
+      logger18.error("Unexpected validation error", error, {
         path: req.path,
         method: req.method
       });
@@ -51502,9 +52129,9 @@ function validateRequest(schema) {
 
 // src/api/v1/middlewares/error.ts
 init_src2();
-var logger12 = createLogger({ service: "error-middleware" });
+var logger19 = createLogger({ service: "error-middleware" });
 function errorHandler(err, req, res, _next) {
-  logger12.error("Request error", err, {
+  logger19.error("Request error", err, {
     path: req.path,
     method: req.method
   });
@@ -51560,7 +52187,7 @@ var admin3 = __toESM(require("firebase-admin"), 1);
 // src/api/v1/middlewares/auth.ts
 var admin2 = __toESM(require("firebase-admin"), 1);
 init_src2();
-var logger13 = createLogger({ service: "AuthMiddleware" });
+var logger20 = createLogger({ service: "AuthMiddleware" });
 async function verifyToken(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
@@ -51582,7 +52209,7 @@ async function verifyToken(req, res, next) {
       role,
       emailVerified: decodedToken.email_verified
     };
-    logger13.debug("User authenticated", {
+    logger20.debug("User authenticated", {
       uid: req.user.uid,
       email: req.user.email,
       role: req.user.role
@@ -51590,7 +52217,7 @@ async function verifyToken(req, res, next) {
     next();
   } catch (error) {
     if (error.code === "auth/id-token-expired") {
-      logger13.warn("Expired token", { error });
+      logger20.warn("Expired token", { error });
       res.status(401).json({
         success: false,
         error: {
@@ -51601,7 +52228,7 @@ async function verifyToken(req, res, next) {
       return;
     }
     if (error.code === "auth/argument-error") {
-      logger13.warn("Invalid token format", { error });
+      logger20.warn("Invalid token format", { error });
       res.status(401).json({
         success: false,
         error: {
@@ -51612,7 +52239,7 @@ async function verifyToken(req, res, next) {
       return;
     }
     if (error instanceof AppError) {
-      logger13.warn("Authentication failed", { error });
+      logger20.warn("Authentication failed", { error });
       res.status(error.statusCode).json({
         success: false,
         error: {
@@ -51622,7 +52249,7 @@ async function verifyToken(req, res, next) {
       });
       return;
     }
-    logger13.error("Authentication error", error);
+    logger20.error("Authentication error", error);
     res.status(500).json({
       success: false,
       error: {
@@ -51643,7 +52270,7 @@ function checkRole(allowedRoles) {
         );
       }
       if (!req.user.role) {
-        logger13.warn("User has no role assigned", { uid: req.user.uid });
+        logger20.warn("User has no role assigned", { uid: req.user.uid });
         res.status(403).json({
           success: false,
           error: {
@@ -51654,7 +52281,7 @@ function checkRole(allowedRoles) {
         return;
       }
       if (!allowedRoles.includes(req.user.role)) {
-        logger13.warn("Insufficient permissions", {
+        logger20.warn("Insufficient permissions", {
           uid: req.user.uid,
           userRole: req.user.role,
           requiredRoles: allowedRoles
@@ -51672,7 +52299,7 @@ function checkRole(allowedRoles) {
         });
         return;
       }
-      logger13.debug("Role check passed", {
+      logger20.debug("Role check passed", {
         uid: req.user.uid,
         role: req.user.role
       });
@@ -51688,7 +52315,7 @@ function checkRole(allowedRoles) {
         });
         return;
       }
-      logger13.error("Role check error", error);
+      logger20.error("Role check error", error);
       res.status(500).json({
         success: false,
         error: {
@@ -51703,7 +52330,7 @@ async function optionalAuth(req, res, next) {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      logger13.debug("No auth token provided, continuing as anonymous");
+      logger20.debug("No auth token provided, continuing as anonymous");
       next();
       return;
     }
@@ -51717,13 +52344,13 @@ async function optionalAuth(req, res, next) {
       role: userData?.role,
       emailVerified: decodedToken.email_verified
     };
-    logger13.debug("Optional auth - user authenticated", {
+    logger20.debug("Optional auth - user authenticated", {
       uid: req.user.uid,
       role: req.user.role
     });
     next();
   } catch (error) {
-    logger13.warn("Optional auth - invalid token, continuing as anonymous", {
+    logger20.warn("Optional auth - invalid token, continuing as anonymous", {
       error
     });
     next();
@@ -51731,7 +52358,7 @@ async function optionalAuth(req, res, next) {
 }
 
 // src/api/v1/middlewares/rateLimit.ts
-var logger14 = createLogger({ service: "rate-limit-middleware" });
+var logger21 = createLogger({ service: "rate-limit-middleware" });
 var RATE_LIMITS = {
   ["admin" /* ADMIN */]: Number.MAX_SAFE_INTEGER,
   // Unlimited
@@ -51809,7 +52436,7 @@ async function checkUserRateLimit(userId, role) {
     });
     return result;
   } catch (error) {
-    logger14.error("Error checking rate limit", error, { userId, role });
+    logger21.error("Error checking rate limit", error, { userId, role });
     return {
       allowed: true,
       remaining: RATE_LIMITS[role],
@@ -51853,12 +52480,12 @@ async function rateLimitMiddleware(req, res, next) {
       const role = req.user.role || "pharmacy_technician" /* PHARMACY_TECHNICIAN */;
       limit2 = RATE_LIMITS[role];
       if (role === "admin" /* ADMIN */) {
-        logger14.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
+        logger21.debug("Admin user - bypassing rate limit", { uid: req.user.uid });
         next();
         return;
       }
       result = await checkUserRateLimit(req.user.uid, role);
-      logger14.debug("User rate limit check", {
+      logger21.debug("User rate limit check", {
         uid: req.user.uid,
         role,
         allowed: result.allowed,
@@ -51868,7 +52495,7 @@ async function rateLimitMiddleware(req, res, next) {
       identifier = req.ip || "unknown";
       limit2 = RATE_LIMITS.anonymous;
       result = checkAnonymousRateLimit(identifier);
-      logger14.debug("Anonymous rate limit check", {
+      logger21.debug("Anonymous rate limit check", {
         ip: identifier,
         allowed: result.allowed,
         remaining: result.remaining
@@ -51878,7 +52505,7 @@ async function rateLimitMiddleware(req, res, next) {
     res.setHeader("X-RateLimit-Remaining", result.remaining.toString());
     res.setHeader("X-RateLimit-Reset", result.resetAt.toISOString());
     if (!result.allowed) {
-      logger14.warn("Rate limit exceeded", {
+      logger21.warn("Rate limit exceeded", {
         identifier,
         retryAfter: result.retryAfter,
         authenticated: !!req.user
@@ -51902,14 +52529,14 @@ async function rateLimitMiddleware(req, res, next) {
     }
     next();
   } catch (error) {
-    logger14.error("Rate limit middleware error", error);
+    logger21.error("Rate limit middleware error", error);
     next();
   }
 }
 
 // src/api/v1/middlewares/redact.ts
 init_src2();
-var logger15 = createLogger({ service: "redaction-middleware" });
+var logger22 = createLogger({ service: "redaction-middleware" });
 function redactionMiddleware(req, res, next) {
   const context = sanitizeLogContext({
     method: req.method,
@@ -51917,7 +52544,7 @@ function redactionMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.get("user-agent")
   });
-  logger15.info("Request received", context);
+  logger22.info("Request received", context);
   const startTime = Date.now();
   res.on("finish", () => {
     const executionTime = Date.now() - startTime;
@@ -51927,14 +52554,14 @@ function redactionMiddleware(req, res, next) {
       statusCode: res.statusCode,
       executionTime
     });
-    logger15.info("Request completed", responseContext);
+    logger22.info("Request completed", responseContext);
   });
   next();
 }
 
 // src/api/v1/middlewares/logging.ts
 init_src2();
-var logger16 = createLogger({ service: "request-logger" });
+var logger23 = createLogger({ service: "request-logger" });
 function getCorrelationId(req) {
   const existingId = req.headers["x-correlation-id"] || req.headers["x-request-id"] || req.headers["x-trace-id"];
   if (existingId && typeof existingId === "string") {
@@ -51997,7 +52624,7 @@ function loggingMiddleware(req, res, next) {
     ip: req.ip,
     userAgent: req.headers["user-agent"]
   };
-  logger16.info("Incoming request", {
+  logger23.info("Incoming request", {
     ...logContext,
     body: redactRequestBody(req.body),
     query: req.query
@@ -52005,7 +52632,7 @@ function loggingMiddleware(req, res, next) {
   const originalJson = res.json.bind(res);
   res.json = function(body) {
     const executionTime = Date.now() - startTime;
-    logger16.info("Outgoing response", {
+    logger23.info("Outgoing response", {
       ...logContext,
       statusCode: res.statusCode,
       executionTime,
@@ -52019,7 +52646,7 @@ function loggingMiddleware(req, res, next) {
       return;
     }
     const executionTime = Date.now() - startTime;
-    logger16.info("Request completed", {
+    logger23.info("Request completed", {
       ...logContext,
       statusCode: res.statusCode,
       executionTime
@@ -52029,7 +52656,7 @@ function loggingMiddleware(req, res, next) {
   next = function(err) {
     if (err) {
       const executionTime = Date.now() - startTime;
-      logger16.error("Request error", err, {
+      logger23.error("Request error", err, {
         ...logContext,
         executionTime,
         errorName: err?.name,
@@ -52044,10 +52671,10 @@ function loggingMiddleware(req, res, next) {
 // src/index.ts
 init_src();
 init_src2();
-var logger17 = createLogger({ service: "functions-main" });
+var logger24 = createLogger({ service: "functions-main" });
 if (!admin4.apps.length) {
   admin4.initializeApp();
-  logger17.info("Firebase Admin SDK initialized");
+  logger24.info("Firebase Admin SDK initialized");
 }
 var app = (0, import_express.default)();
 var corsOptions = {
@@ -52072,6 +52699,14 @@ app.use(import_express.default.json());
 app.use(loggingMiddleware);
 app.use(redactionMiddleware);
 app.get("/v1/health", asyncHandler(healthCheck));
+app.post(
+  "/v1/search",
+  asyncHandler(optionalAuth),
+  // Optional auth - allows both authenticated and anonymous users
+  asyncHandler(rateLimitMiddleware),
+  // Rate limiting based on auth status
+  asyncHandler(searchHandler)
+);
 app.post(
   "/v1/calculate",
   asyncHandler(optionalAuth),
@@ -52111,7 +52746,7 @@ var api = functions.region("us-central1").runWith({
   memory: "512MB",
   timeoutSeconds: 60
 }).https.onRequest(app);
-logger17.info("NDC Calculator functions initialized with authentication");
+logger24.info("NDC Calculator functions initialized with authentication");
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   api

@@ -4,3 +4,4 @@
  */
 export * from "./types";
 export * from "./calculate.schema";
+export * from "./alternatives.schema";

@@ -34,7 +34,7 @@ export function mapFDAResultToNDCPackage(fdaResult: FDANDCResult): NDCPackage[] 
         route: fdaResult.route || [],
         packageSize: parsePackageSize(packaging.description),
         activeIngredients: mapActiveIngredients(fdaResult.active_ingredients),
-        marketingStatus: parseMarketingStatus(packaging),
+        marketingStatus: parseMarketingStatus(packaging, fdaResult.marketing_status),
         labeler: fdaResult.labeler_name,
         rxcui: extractRxCUI(fdaResult.openfda),
         listingExpirationDate: parseFDADate(fdaResult.listing_expiration_date),
@@ -82,7 +82,7 @@ export function mapFDAResultToNDCDetails(fdaResult: FDANDCResult): NDCDetails | 
       route: fdaResult.route || [],
       packageSize: parsePackageSize(primaryPackaging.description),
       activeIngredients: mapActiveIngredients(fdaResult.active_ingredients),
-      marketingStatus: parseMarketingStatus(primaryPackaging),
+      marketingStatus: parseMarketingStatus(primaryPackaging, fdaResult.marketing_status),
       labeler: fdaResult.labeler_name,
       rxcui: extractRxCUI(fdaResult.openfda),
       listingExpirationDate: parseFDADate(fdaResult.listing_expiration_date),
@@ -257,7 +257,10 @@ export function mapActiveIngredients(
  * @param packaging FDA packaging information
  * @returns Marketing status
  */
-export function parseMarketingStatus(packaging: FDAPackaging): MarketingStatus {
+export function parseMarketingStatus(
+  packaging: FDAPackaging,
+  productStatus?: string
+): MarketingStatus {
   const hasStartDate = !!packaging.marketing_start_date;
   const hasEndDate = !!packaging.marketing_end_date;
 
@@ -265,18 +268,28 @@ export function parseMarketingStatus(packaging: FDAPackaging): MarketingStatus {
   const endDate = parseFDADate(packaging.marketing_end_date);
 
   // Determine status
-  let status: 'active' | 'discontinued' | 'expired' | 'unknown';
-  let isActive: boolean;
+  let status: 'active' | 'discontinued' | 'expired' | 'unknown' = 'unknown';
+  let isActive = true;
+
+  const normalizedProductStatus = productStatus?.toLowerCase();
 
   if (hasEndDate) {
     status = 'discontinued';
     isActive = false;
-  } else if (hasStartDate) {
+  } else if (normalizedProductStatus?.includes('discontinued')) {
+    status = 'discontinued';
+    isActive = false;
+  } else if (normalizedProductStatus?.includes('withdrawn') || normalizedProductStatus?.includes('expired')) {
+    status = 'expired';
+    isActive = false;
+  } else if (hasStartDate || normalizedProductStatus?.includes('active')) {
     status = 'active';
     isActive = true;
   } else {
-    status = 'unknown';
-    isActive = false;
+    // Default assumption: if there's no end date and FDA does not explicitly say discontinued,
+    // treat it as active.
+    status = 'active';
+    isActive = true;
   }
 
   return {

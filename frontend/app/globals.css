@@ -124,3 +124,42 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Print Styles */
+@media print {
+  @page {
+    margin: 1cm;
+  }
+  
+  body {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  
+  .print\:hidden {
+    display: none !important;
+  }
+  
+  /* Hide navigation and controls when printing */
+  nav,
+  header,
+  footer,
+  button:not(.print\:block),
+  [role="navigation"],
+  [role="banner"] {
+    display: none !important;
+  }
+  
+  /* Page break control */
+  .print\:break-before {
+    page-break-before: always;
+  }
+  
+  .print\:break-after {
+    page-break-after: always;
+  }
+  
+  .print\:no-break {
+    page-break-inside: avoid;
+  }
+}
